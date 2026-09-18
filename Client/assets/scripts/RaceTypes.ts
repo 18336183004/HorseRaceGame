@@ -1,0 +1,5 @@
+export enum RaceState { Betting=1, Closed=2, Preparing=3, Racing=4, Settlement=5, Finished=6, Cancelled=7 }
+export interface RaceHorseDto { horseNo:number; horseTemplateId:number; horseNameZhSnapshot?:string; horseNameEnSnapshot?:string; avatarAssetSnapshot?:string; odds:number; finalRank?:number|null; finishTime?:number|null; animation?:string|null; runningStyle?:string; }
+export interface RaceRoundDto { id:number; roundNo:string; state:RaceState; bettingStartAt:string; bettingEndAt:string; prepareStartAt?:string|null; raceStartAt?:string|null; raceEndAt?:string|null; settlementAt?:string|null; bettingDurationSeconds:number; prepareDurationSeconds:number; raceDurationSeconds:number; postRaceIntervalSeconds:number; horses:RaceHorseDto[]; }
+export interface HorseRaceAnimation { horseNo:number; finishTime:number; animationSeed?:number; }
+export interface PlaceBetResponse { orderNo:string; roundId:number; horseNo:number; betAmount:number; lockedOdds:number; grossReward:number; feeRate:number; feeAmount:number; netReward:number; balance:number; serverTime:string; }

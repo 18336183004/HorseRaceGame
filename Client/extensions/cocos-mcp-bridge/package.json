@@ -1,0 +1,25 @@
+{
+  "name": "cocos-mcp-bridge",
+  "version": "1.0.0",
+  "description": "MCP Bridge Extension for Cocos Creator 3.8.8",
+  "package_version": 2,
+  "main": "./main.js",
+  "author": "Antigravity",
+  "contributions": {
+    "menu": [
+      {
+        "path": "Developer/Cocos MCP Bridge",
+        "label": "Cocos MCP Bridge",
+        "message": "openPanel"
+      }
+    ],
+    "messages": {
+      "openPanel": {
+        "methods": ["openPanel"]
+      },
+      "getStatus": {
+        "methods": ["getStatus"]
+      }
+    }
+  }
+}

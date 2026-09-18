@@ -1,0 +1,131 @@
+{
+  "Version": 1,
+  "WorkspaceRootPath": "D:\\project\\HorseRaceGame.git\\",
+  "Documents": [
+    {
+      "AbsoluteMoniker": "D:0:0:{A1A11111-1111-4111-8111-111111111111}|Server\\RaceGame.Api\\RaceGame.Api.csproj|d:\\project\\horseracegame.git\\server\\racegame.api\\program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{A1A11111-1111-4111-8111-111111111111}|Server\\RaceGame.Api\\RaceGame.Api.csproj|solutionrelative:server\\racegame.api\\program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2A22222-2222-4222-8222-222222222222}|Server\\RaceGame.Domain\\RaceGame.Domain.csproj|d:\\project\\horseracegame.git\\server\\racegame.domain\\entities\\raceround.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{A2A22222-2222-4222-8222-222222222222}|Server\\RaceGame.Domain\\RaceGame.Domain.csproj|solutionrelative:server\\racegame.domain\\entities\\raceround.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A1A11111-1111-4111-8111-111111111111}|Server\\RaceGame.Api\\RaceGame.Api.csproj|d:\\project\\horseracegame.git\\server\\racegame.api\\services\\jwttokenservice.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{A1A11111-1111-4111-8111-111111111111}|Server\\RaceGame.Api\\RaceGame.Api.csproj|solutionrelative:server\\racegame.api\\services\\jwttokenservice.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A4A44444-4444-4444-8444-444444444444}|Server\\RaceGame.Infrastructure\\RaceGame.Infrastructure.csproj|d:\\project\\horseracegame.git\\server\\racegame.infrastructure\\persistence\\appdbcontext.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{A4A44444-4444-4444-8444-444444444444}|Server\\RaceGame.Infrastructure\\RaceGame.Infrastructure.csproj|solutionrelative:server\\racegame.infrastructure\\persistence\\appdbcontext.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A1A11111-1111-4111-8111-111111111111}|Server\\RaceGame.Api\\RaceGame.Api.csproj|d:\\project\\horseracegame.git\\server\\racegame.api\\services\\passwordhasher.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{A1A11111-1111-4111-8111-111111111111}|Server\\RaceGame.Api\\RaceGame.Api.csproj|solutionrelative:server\\racegame.api\\services\\passwordhasher.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    }
+  ],
+  "DocumentGroupContainers": [
+    {
+      "Orientation": 0,
+      "VerticalTabListWidth": 256,
+      "DocumentGroups": [
+        {
+          "DockedWidth": 200,
+          "SelectedChildIndex": 2,
+          "Children": [
+            {
+              "$type": "Bookmark",
+              "Name": "ST:0:0:{8f3a9c2d-1e5b-4f6a-9c8d-2e3f5a7b1d4e}"
+            },
+            {
+              "$type": "Bookmark",
+              "Name": "ST:128:0:{1fc202d4-d401-403c-9834-5b218574bb67}"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "Program.cs",
+              "DocumentMoniker": "D:\\project\\HorseRaceGame.git\\Server\\RaceGame.Api\\Program.cs",
+              "RelativeDocumentMoniker": "Server\\RaceGame.Api\\Program.cs",
+              "ToolTip": "D:\\project\\HorseRaceGame.git\\Server\\RaceGame.Api\\Program.cs",
+              "RelativeToolTip": "Server\\RaceGame.Api\\Program.cs",
+              "ViewState": "AgIAAIQAAAAAAAAAAAAAACIAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-09-07T08:09:08.925Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 1,
+              "Title": "RaceRound.cs",
+              "DocumentMoniker": "D:\\project\\HorseRaceGame.git\\Server\\RaceGame.Domain\\Entities\\RaceRound.cs",
+              "RelativeDocumentMoniker": "Server\\RaceGame.Domain\\Entities\\RaceRound.cs",
+              "ToolTip": "D:\\project\\HorseRaceGame.git\\Server\\RaceGame.Domain\\Entities\\RaceRound.cs",
+              "RelativeToolTip": "Server\\RaceGame.Domain\\Entities\\RaceRound.cs",
+              "ViewState": "AgIAABYAAAAAAAAAAAAYwCcAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-09-07T08:07:29.653Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 3,
+              "Title": "AppDbContext.cs",
+              "DocumentMoniker": "D:\\project\\HorseRaceGame.git\\Server\\RaceGame.Infrastructure\\Persistence\\AppDbContext.cs",
+              "RelativeDocumentMoniker": "Server\\RaceGame.Infrastructure\\Persistence\\AppDbContext.cs",
+              "ToolTip": "D:\\project\\HorseRaceGame.git\\Server\\RaceGame.Infrastructure\\Persistence\\AppDbContext.cs",
+              "RelativeToolTip": "Server\\RaceGame.Infrastructure\\Persistence\\AppDbContext.cs",
+              "ViewState": "AgIAAB4DAAAAAAAAAAAQwDQDAABHAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-09-07T08:07:25.884Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 4,
+              "Title": "PasswordHasher.cs",
+              "DocumentMoniker": "D:\\project\\HorseRaceGame.git\\Server\\RaceGame.Api\\Services\\PasswordHasher.cs",
+              "RelativeDocumentMoniker": "Server\\RaceGame.Api\\Services\\PasswordHasher.cs",
+              "ToolTip": "D:\\project\\HorseRaceGame.git\\Server\\RaceGame.Api\\Services\\PasswordHasher.cs",
+              "RelativeToolTip": "Server\\RaceGame.Api\\Services\\PasswordHasher.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-09-07T07:36:00.437Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 2,
+              "Title": "JwtTokenService.cs",
+              "DocumentMoniker": "D:\\project\\HorseRaceGame.git\\Server\\RaceGame.Api\\Services\\JwtTokenService.cs",
+              "RelativeDocumentMoniker": "Server\\RaceGame.Api\\Services\\JwtTokenService.cs",
+              "ToolTip": "D:\\project\\HorseRaceGame.git\\Server\\RaceGame.Api\\Services\\JwtTokenService.cs",
+              "RelativeToolTip": "Server\\RaceGame.Api\\Services\\JwtTokenService.cs",
+              "ViewState": "AgIAABsAAAAAAAAAAADgvy0AAABGAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-09-07T07:35:51.669Z"
+            }
+          ]
+        },
+        {
+          "DockedWidth": 2548,
+          "SelectedChildIndex": -1,
+          "Children": [
+            {
+              "$type": "Bookmark",
+              "Name": "ST:0:0:{be4d7042-ba3f-11d2-840e-00c04f9902c1}"
+            },
+            {
+              "$type": "Bookmark",
+              "Name": "ST:0:0:{0504ff91-9d61-11d0-a794-00a0c9110051}"
+            },
+            {
+              "$type": "Bookmark",
+              "Name": "ST:0:0:{f2e84780-2af1-11d1-a7fa-00a0c9110051}"
+            },
+            {
+              "$type": "Bookmark",
+              "Name": "ST:0:0:{4a18f9d0-b838-11d0-93eb-00a0c90f2734}"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

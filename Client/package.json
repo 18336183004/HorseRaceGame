@@ -1,0 +1,17 @@
+{
+  "name": "horseracegame-client",
+  "version": "1.0.0",
+  "private": true,
+  "description": "HorseRaceGame Cocos Creator 3.8.8 client contracts and lightweight UI",
+  "devDependencies": {
+    "@cocos/creator-types": "3.8.8",
+    "typescript": "4.9.5"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "creator": {
+    "version": "3.8.8"
+  },
+  "uuid": "89487ba1-eb2e-49cb-9a5f-42632044474d"
+}
