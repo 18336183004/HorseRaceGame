@@ -1,0 +1,44 @@
+# ---------- 构建产物 ----------
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Dd]ebugPublic/
+[Rr]elease/
+[Rr]eleases/
+x64/
+x86/
+[Ww][Ii][Nn]32/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+
+# ---------- 日志 ----------
+[Ll]og/
+[Ll]ogs/
+*.log
+
+# ---------- Visual Studio ----------
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.userprefs
+
+# ---------- NuGet ----------
+*.nupkg
+*.snupkg
+.nuget/
+packages/
+
+# ---------- IDE ----------
+.vscode/
+.idea/
+
+# ---------- 系统文件 ----------
+.DS_Store
+Thumbs.db
+
+# ---------- 测试结果 ----------
+[Tt]est[Rr]esult*/
+[Bb]uild[Ll]og.*
