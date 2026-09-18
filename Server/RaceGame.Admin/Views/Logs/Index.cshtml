@@ -1,0 +1,165 @@
+@{
+    ViewData["Title"] = "业务与服务日志";
+    var files = (IEnumerable<string>)ViewBag.Files;
+    var type = (string)ViewBag.Type;
+}
+
+<div class="page-header-row">
+    <div>
+        <h1 class="page-title">📜 业务与服务运行日志</h1>
+        <p class="page-subtitle">查看轮次调度执行日志、马匹与角色变动审计及本地文件日志</p>
+    </div>
+    <div class="d-flex gap-2">
+        <a class="btn-modern-sm @(type == "race" ? "btn-modern-primary" : "btn-modern-outline")" href="/Logs?type=race">
+            <i class="bi bi-flag"></i> 比赛日志
+        </a>
+        <a class="btn-modern-sm @(type == "horse" ? "btn-modern-primary" : "btn-modern-outline")" href="/Logs?type=horse">
+            <i class="bi bi-trophy"></i> 马匹日志
+        </a>
+        <a class="btn-modern-sm @(type == "character" ? "btn-modern-primary" : "btn-modern-outline")" href="/Logs?type=character">
+            <i class="bi bi-person-badge"></i> 角色日志
+        </a>
+    </div>
+</div>
+
+<div class="row g-4">
+    <!-- Left Column: Log File Selector -->
+    <div class="col-lg-3">
+        <div class="card-modern p-3">
+            <h6 class="fw-bold mb-3 text-dark d-flex align-items-center gap-2">
+                <i class="bi bi-folder2-open text-primary"></i> 日志文件归档
+            </h6>
+            <div class="d-flex flex-column gap-2" style="max-height: 70vh; overflow-y: auto;">
+                @foreach (var file in files)
+                {
+                    bool isSelected = ViewBag.Selected == file;
+                    <a class="p-2 px-3 rounded-3 text-decoration-none d-flex align-items-center justify-content-between @(isSelected ? "bg-primary text-white" : "bg-light text-dark")"
+                       href="/Logs?file=@Uri.EscapeDataString(file)&type=@type"
+                       style="font-size: 12px; font-family: var(--font-mono); transition: all 0.2s;">
+                        <span class="text-truncate">@file</span>
+                        <i class="bi @(isSelected ? "bi-check2" : "bi-file-text") ms-1"></i>
+                    </a>
+                }
+
+                @if (!files.Any())
+                {
+                    <span class="text-muted small py-3 text-center">暂无本地日志文件</span>
+                }
+            </div>
+        </div>
+    </div>
+
+    <!-- Right Column: Structured Table & Terminal Content -->
+    <div class="col-lg-9">
+        @if (type == "horse")
+        {
+            var logs = ViewBag.HorseLogs as IEnumerable<dynamic> ?? Array.Empty<dynamic>();
+            <div class="card-modern mb-4">
+                <div class="card-header-flex">
+                    <h6 class="fw-bold text-dark mb-0">马匹业务推进审计记录</h6>
+                </div>
+                <div class="table-responsive">
+                    <table class="table-modern">
+                        <thead><tr><th>ID</th><th>轮次</th><th>马号</th><th>事件类型</th><th>执行状态</th><th>发生时间</th><th>数据载荷</th></tr></thead>
+                        <tbody>
+                        @foreach (var log in logs)
+                        {
+                            <tr>
+                                <td class="fw-bold">#@log.Id</td>
+                                <td>@log.RoundId</td>
+                                <td>@log.HorseNo 号</td>
+                                <td><span class="badge-soft badge-soft-info">@log.EventType</span></td>
+                                <td><span class="badge-soft badge-soft-success">@log.ExecutionStatus</span></td>
+                                <td class="text-muted small">@log.CreatedAt</td>
+                                <td><code class="code-pill text-truncate" style="max-width: 260px; display: inline-block;">@log.PayloadJson</code></td>
+                            </tr>
+                        }
+                        @if (!logs.Any())
+                        {
+                            <tr><td colspan="7" class="text-center py-4 text-muted">暂无马匹日志数据</td></tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        }
+        else if (type == "character")
+        {
+            var logs = ViewBag.CharacterLogs as IEnumerable<dynamic> ?? Array.Empty<dynamic>();
+            <div class="card-modern mb-4">
+                <div class="card-header-flex">
+                    <h6 class="fw-bold text-dark mb-0">角色升级与变动记录</h6>
+                </div>
+                <div class="table-responsive">
+                    <table class="table-modern">
+                        <thead><tr><th>ID</th><th>玩家</th><th>角色ID</th><th>事件类型</th><th>状态</th><th>发生时间</th><th>数据载荷</th></tr></thead>
+                        <tbody>
+                        @foreach (var log in logs)
+                        {
+                            <tr>
+                                <td class="fw-bold">#@log.Id</td>
+                                <td>玩家 #@log.PlayerId</td>
+                                <td>角色 #@log.CharacterId</td>
+                                <td><span class="badge-soft badge-soft-info">@log.EventType</span></td>
+                                <td><span class="badge-soft badge-soft-success">@log.ExecutionStatus</span></td>
+                                <td class="text-muted small">@log.CreatedAt</td>
+                                <td><code class="code-pill text-truncate" style="max-width: 260px; display: inline-block;">@log.PayloadJson</code></td>
+                            </tr>
+                        }
+                        @if (!logs.Any())
+                        {
+                            <tr><td colspan="7" class="text-center py-4 text-muted">暂无角色日志数据</td></tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        }
+        else
+        {
+            var logs = ViewBag.RaceLogs as IEnumerable<dynamic> ?? Array.Empty<dynamic>();
+            <div class="card-modern mb-4">
+                <div class="card-header-flex">
+                    <h6 class="fw-bold text-dark mb-0">比赛状态机流转记录</h6>
+                </div>
+                <div class="table-responsive">
+                    <table class="table-modern">
+                        <thead><tr><th>ID</th><th>轮次号</th><th>事件类型</th><th>阶段状态</th><th>执行状态</th><th>发生时间</th><th>数据载荷</th></tr></thead>
+                        <tbody>
+                        @foreach (var log in logs)
+                        {
+                            <tr>
+                                <td class="fw-bold">#@log.Id</td>
+                                <td><span class="code-pill">@log.RoundNo</span></td>
+                                <td><span class="badge-soft badge-soft-primary">@log.EventType</span></td>
+                                <td><span class="badge-soft badge-soft-info">@log.State</span></td>
+                                <td><span class="badge-soft badge-soft-success">@log.ExecutionStatus</span></td>
+                                <td class="text-muted small">@log.CreatedAt</td>
+                                <td><code class="code-pill text-truncate" style="max-width: 260px; display: inline-block;">@log.PayloadJson</code></td>
+                            </tr>
+                        }
+                        @if (!logs.Any())
+                        {
+                            <tr><td colspan="7" class="text-center py-4 text-muted">暂无比赛流转日志</td></tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        }
+
+        <!-- File Log Viewer Terminal -->
+        <div class="card-modern p-3">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <h6 class="fw-bold text-dark mb-0">
+                    <i class="bi bi-terminal text-success me-2"></i> 日志内容实时预览
+                </h6>
+                <button type="button" class="btn-modern-outline btn-modern-sm copyable-code" onclick="navigator.clipboard.writeText(document.getElementById('fileLogContent').innerText); showToast('已复制全部日志内容');">
+                    <i class="bi bi-clipboard"></i> 复制日志
+                </button>
+            </div>
+            <pre class="log-view-terminal" id="fileLogContent">@((ViewBag.Content as string) ?? "请在左侧点击选择需要查看的日志文件。")</pre>
+        </div>
+    </div>
+</div>
+

@@ -1,0 +1,125 @@
+@model IEnumerable<RaceGame.Domain.Entities.RaceRound>
+@using RaceGame.Domain.Enums
+@{
+    ViewData["Title"] = "比赛轮次";
+    int pageNo = ViewBag.Page ?? 1;
+    int pageSize = ViewBag.PageSize ?? 50;
+}
+
+<div class="page-header-row">
+    <div>
+        <h1 class="page-title">🏁 比赛轮次记录</h1>
+        <p class="page-subtitle">按轮次跟踪下注流水、状态流转周期与夺冠结算结果</p>
+    </div>
+    <div class="d-flex align-items-center gap-2">
+        <span class="badge-soft badge-soft-primary">
+            当前第 @pageNo 页 (每页 @pageSize 条)
+        </span>
+    </div>
+</div>
+
+<div class="card-modern">
+    <div class="table-responsive">
+        <table class="table-modern">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>轮次流水号</th>
+                    <th>流转状态</th>
+                    <th>赛果 (冠亚/连赢)</th>
+                    <th>下注笔数</th>
+                    <th>投注总流水</th>
+                    <th>开启时间</th>
+                    <th>结算归档时间</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var round in Model)
+                {
+                    var (badgeClass, stateText) = round.State switch
+                    {
+                        RaceState.Betting => ("badge-soft-success", "下注中 (Betting)"),
+                        RaceState.Preparing => ("badge-soft-warning", "准备中 (Preparing)"),
+                        RaceState.Racing => ("badge-soft-primary", "比赛中 (Racing)"),
+                        RaceState.Settlement => ("badge-soft-info", "结算中 (Settlement)"),
+                        RaceState.Finished => ("badge-soft-secondary", "已结算 (Finished)"),
+                        RaceState.Cancelled => ("badge-soft-danger", "已作废 (Cancelled)"),
+                        _ => ("badge-soft-secondary", round.State.ToString())
+                    };
+
+                    <tr>
+                        <td class="fw-bold text-dark">#@round.Id</td>
+                        <td>
+                            <span class="code-pill copyable-code">
+                                <i class="bi bi-flag text-muted"></i> @round.RoundNo
+                            </span>
+                        </td>
+                        <td>
+                            <span class="badge-soft @badgeClass">
+                                <span class="badge-pulse-dot"></span> @stateText
+                            </span>
+                        </td>
+                        <td>
+                            @if (round.WinnerHorseNo.HasValue)
+                            {
+                                <span class="badge-soft badge-soft-warning">
+                                    <i class="bi bi-trophy-fill"></i> 冠: @round.WinnerHorseNo.Value 号
+                                </span>
+                                @if (round.SecondHorseNo.HasValue)
+                                {
+                                    <span class="badge-soft badge-soft-secondary ms-1">
+                                        亚: @round.SecondHorseNo.Value 号
+                                    </span>
+                                    <span class="badge-soft badge-soft-info ms-1">
+                                        连赢 [@round.QuinellaCombination]
+                                    </span>
+                                }
+                            }
+                            else
+                            {
+                                <span class="text-muted">-</span>
+                            }
+                        </td>
+                        <td class="fw-semibold">@round.BetCount 笔</td>
+                        <td class="fw-bold text-success">¥@round.TotalBetAmount.ToString("N2")</td>
+                        <td class="text-muted" style="font-size: 12px;">
+                            @round.BettingStartAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
+                        </td>
+                        <td class="text-muted" style="font-size: 12px;">
+                            @(round.SettlementAt.HasValue ? round.SettlementAt.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") : "-")
+                        </td>
+                    </tr>
+                }
+
+                @if (!Model.Any())
+                {
+                    <tr>
+                        <td colspan="8" class="text-center py-5 text-muted">
+                            <i class="bi bi-flag fs-2 d-block mb-2"></i>
+                            当前无比赛轮次记录
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Pagination Footer -->
+    <div class="card-header-flex border-top py-3">
+        <div class="text-muted small">
+            显示第 @pageNo 页数据
+        </div>
+        <div class="d-flex gap-2">
+            @if (pageNo > 1)
+            {
+                <a href="/Rounds?page=@(pageNo - 1)&pageSize=@pageSize" class="btn-modern-outline btn-modern-sm">
+                    <i class="bi bi-chevron-left"></i> 上一页
+                </a>
+            }
+            <a href="/Rounds?page=@(pageNo + 1)&pageSize=@pageSize" class="btn-modern-outline btn-modern-sm">
+                下一页 <i class="bi bi-chevron-right"></i>
+            </a>
+        </div>
+    </div>
+</div>
+

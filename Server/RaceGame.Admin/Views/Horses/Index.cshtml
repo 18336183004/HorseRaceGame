@@ -1,0 +1,112 @@
+@model IEnumerable<RaceGame.Domain.Entities.HorseCatalog>
+@{
+    ViewData["Title"] = "马匹配置";
+}
+
+<div class="page-header-row">
+    <div>
+        <h1 class="page-title">🐴 参赛马匹图鉴与配置</h1>
+        <p class="page-subtitle">维护参赛马匹基础档案、胜率胜场统计、赛道偏好与出战状态</p>
+    </div>
+    <div>
+        <a class="btn-modern-primary" href="/Horses/Edit">
+            <i class="bi bi-plus-lg"></i> 新增马匹
+        </a>
+    </div>
+</div>
+
+<div class="card-modern">
+    <div class="table-responsive">
+        <table class="table-modern">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>马匹名称</th>
+                    <th>编码</th>
+                    <th>赛道/天气偏好</th>
+                    <th>出战总场次</th>
+                    <th>胜场 / 胜率</th>
+                    <th>出战状态</th>
+                    <th class="text-end">管理操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var horse in Model)
+                {
+                    <tr>
+                        <td class="fw-bold text-dark">#@horse.Id</td>
+                        <td>
+                            <div class="d-flex align-items-center gap-3">
+                                <div class="horse-avatar-sm" style="width: 36px; height: 36px; font-size: 18px;">
+                                    🏇
+                                </div>
+                                <div>
+                                    <div class="fw-bold text-dark">@horse.NameZh</div>
+                                    <small class="text-muted">@(string.IsNullOrWhiteSpace(horse.NameEn) ? "No English Name" : horse.NameEn)</small>
+                                </div>
+                            </div>
+                        </td>
+                        <td>
+                            <span class="code-pill">
+                                @horse.HorseCode
+                            </span>
+                        </td>
+                        <td>
+                            <span class="badge-soft badge-soft-info" style="font-size: 11px;">
+                                @horse.PreferredTrack / @horse.PreferredWeather
+                            </span>
+                        </td>
+                        <td class="fw-semibold">@horse.TotalRaces 场</td>
+                        <td style="min-width: 140px;">
+                            <div class="d-flex justify-content-between mb-1 small fw-bold">
+                                <span>@horse.WinCount 胜</span>
+                                <span class="text-primary">@horse.WinRate.ToString("F1")%</span>
+                            </div>
+                            <div class="progress-track-sm">
+                                <div class="progress-fill-sm" style="width: @Math.Min(100, Math.Max(10, (int)horse.WinRate))%;"></div>
+                            </div>
+                        </td>
+                        <td>
+                            @if (horse.IsEnabled)
+                            {
+                                <span class="badge-soft badge-soft-success">
+                                    <span class="badge-pulse-dot"></span> 正常出战
+                                </span>
+                            }
+                            else
+                            {
+                                <span class="badge-soft badge-soft-secondary">
+                                    <span class="badge-pulse-dot"></span> 停用下架
+                                </span>
+                            }
+                        </td>
+                        <td class="text-end">
+                            <div class="d-inline-flex gap-2">
+                                <a class="btn-modern-outline btn-modern-sm" href="/Horses/Edit/@horse.Id">
+                                    <i class="bi bi-pencil-square"></i> 编辑
+                                </a>
+                                <form asp-action="Toggle" method="post" class="d-inline m-0">
+                                    <input type="hidden" name="id" value="@horse.Id" />
+                                    <button type="submit" class="btn-modern-outline btn-modern-sm @(horse.IsEnabled ? "text-warning" : "text-success")">
+                                        @(horse.IsEnabled ? "下架" : "上架")
+                                    </button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                }
+
+                @if (!Model.Any())
+                {
+                    <tr>
+                        <td colspan="8" class="text-center py-5 text-muted">
+                            <i class="bi bi-trophy fs-2 d-block mb-2"></i>
+                            暂无参赛马匹记录，点击右上角新增
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+

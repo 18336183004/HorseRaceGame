@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <IsPackable>false</IsPackable>
+        <IsTestProject>true</IsTestProject>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
+        <PackageReference Include="xunit" Version="2.6.2" />
+        <PackageReference Include="xunit.runner.visualstudio" Version="2.5.4">
+            <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+            <PrivateAssets>all</PrivateAssets>
+        </PackageReference>
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\..\Server\RaceGame.Domain\RaceGame.Domain.csproj" />
+        <ProjectReference Include="..\..\Server\RaceGame.Application\RaceGame.Application.csproj" />
+        <ProjectReference Include="..\..\Server\RaceGame.Infrastructure\RaceGame.Infrastructure.csproj" />
+        <ProjectReference Include="..\..\Server\RaceGame.Api\RaceGame.Api.csproj" />
+    </ItemGroup>
+</Project>

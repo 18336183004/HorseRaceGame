@@ -1,0 +1,33 @@
+@{
+    ViewData["Title"] = "系统错误";
+}
+
+<div class="page-header-row">
+    <div>
+        <h1 class="page-title text-danger">
+            <i class="bi bi-exclamation-triangle-fill me-2"></i> 操作未能完成
+        </h1>
+        <p class="page-subtitle">管理后台在处理当前请求时遇到异常，请根据下方指引排查</p>
+    </div>
+</div>
+
+<div class="card-modern p-4">
+    <div class="d-flex align-items-start gap-3">
+        <div class="stat-icon-squircle stat-icon-pink">
+            <i class="bi bi-shield-x"></i>
+        </div>
+        <div>
+            <h5 class="fw-bold text-dark mb-2">后台服务捕获未处理异常</h5>
+            <p class="text-muted mb-3">
+                详细的调用栈和异常上下文已被安全记录到系统文件日志中，不会直接对外泄露敏感内部信息。
+            </p>
+            <div class="d-flex align-items-center gap-3">
+                <a href="/Logs?type=race" class="btn-modern-primary">
+                    <i class="bi bi-journal-text"></i> 前往查看服务日志
+                </a>
+                <a href="/" class="btn-modern-outline">返回管理控制台</a>
+            </div>
+        </div>
+    </div>
+</div>
+

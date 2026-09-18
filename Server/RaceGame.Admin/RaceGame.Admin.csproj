@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\RaceGame.Domain\RaceGame.Domain.csproj" />
+    <ProjectReference Include="..\RaceGame.Application\RaceGame.Application.csproj" />
+    <ProjectReference Include="..\RaceGame.Infrastructure\RaceGame.Infrastructure.csproj" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,80 @@
+@model RaceGame.Domain.Entities.HorseCatalog
+@{
+    ViewData["Title"] = Model.Id == 0 ? "新增马匹" : "编辑马匹";
+}
+
+<div class="page-header-row">
+    <div>
+        <h1 class="page-title">@(Model.Id == 0 ? "✨ 新增参赛马匹" : "✏️ 编辑马匹档案")</h1>
+        <p class="page-subtitle">配置马匹标识编码、中英文名称、资源路径与赛道属性</p>
+    </div>
+    <div>
+        <a class="btn-modern-outline" href="/Horses">
+            <i class="bi bi-arrow-left"></i> 返回列表
+        </a>
+    </div>
+</div>
+
+<div class="card-modern p-4">
+    <form method="post">
+        <input asp-for="Id" type="hidden" />
+        <div asp-validation-summary="All" class="text-danger mb-3"></div>
+
+        <div class="row g-4">
+            <div class="col-md-4">
+                <label class="form-label-modern">马匹编码 (HorseCode)</label>
+                <input asp-for="HorseCode" class="form-control-modern" placeholder="如: HORSE_01" required />
+            </div>
+            <div class="col-md-4">
+                <label class="form-label-modern">中文名称 (NameZh)</label>
+                <input asp-for="NameZh" class="form-control-modern" placeholder="如: 闪电风暴" required />
+            </div>
+            <div class="col-md-4">
+                <label class="form-label-modern">英文名称 (NameEn)</label>
+                <input asp-for="NameEn" class="form-control-modern" placeholder="如: Lightning Storm" />
+            </div>
+
+            <div class="col-md-4">
+                <label class="form-label-modern">展示排序 (SortOrder)</label>
+                <input asp-for="SortOrder" type="number" class="form-control-modern" />
+            </div>
+            <div class="col-md-4">
+                <label class="form-label-modern">赛道偏好 (TURF / DIRT / SAND)</label>
+                <input asp-for="PreferredTrack" class="form-control-modern" placeholder="TURF" />
+            </div>
+            <div class="col-md-4">
+                <label class="form-label-modern">天气偏好 (SUNNY / RAINY / CLOUDY)</label>
+                <input asp-for="PreferredWeather" class="form-control-modern" placeholder="SUNNY" />
+            </div>
+
+            <div class="col-12">
+                <label class="form-label-modern">马匹特色描述</label>
+                <textarea asp-for="DescriptionZh" class="form-control-modern" rows="3" placeholder="填写该马匹的背景与比赛特点..."></textarea>
+            </div>
+
+            <div class="col-md-6">
+                <label class="form-label-modern">头像资源路径 (AvatarAsset)</label>
+                <input asp-for="AvatarAsset" class="form-control-modern" placeholder="textures/horses/avatar_01" />
+            </div>
+            <div class="col-md-6">
+                <label class="form-label-modern">立绘资源路径 (PortraitAsset)</label>
+                <input asp-for="PortraitAsset" class="form-control-modern" placeholder="textures/horses/portrait_01" />
+            </div>
+
+            <div class="col-12">
+                <div class="form-check form-switch mt-2">
+                    <input asp-for="IsEnabled" class="form-check-input" type="checkbox" id="enableSwitch">
+                    <label class="form-check-label fw-bold ms-2 text-dark" for="enableSwitch">上架并允许在比赛中出战</label>
+                </div>
+            </div>
+        </div>
+
+        <div class="d-flex align-items-center gap-3 mt-4 pt-3 border-top">
+            <button type="submit" class="btn-modern-primary">
+                <i class="bi bi-check2-circle"></i> 保存配置
+            </button>
+            <a class="btn-modern-outline" href="/Horses">取消</a>
+        </div>
+    </form>
+</div>
+

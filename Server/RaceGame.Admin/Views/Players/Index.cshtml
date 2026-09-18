@@ -1,0 +1,131 @@
+@model IEnumerable<RaceGame.Domain.Entities.Player>
+@{
+    ViewData["Title"] = "玩家管理";
+}
+
+<div class="page-header-row">
+    <div>
+        <h1 class="page-title">👥 玩家账户管理</h1>
+        <p class="page-subtitle">查询玩家账号、昵称、等级与账号启禁状态控制</p>
+    </div>
+    <div class="d-flex align-items-center gap-2">
+        <span class="badge-soft badge-soft-primary">
+            当前结果：@Model.Count() 位玩家
+        </span>
+    </div>
+</div>
+
+<div class="card-modern mb-4 p-3">
+    <form method="get" class="row g-2 align-items-center">
+        <div class="col-md-5">
+            <div class="position-relative">
+                <i class="bi bi-search position-absolute top-50 start-0 translate-middle-y ms-3 text-muted"></i>
+                <input type="text"
+                       name="q"
+                       value="@ViewBag.Query"
+                       class="form-control-modern ps-5"
+                       placeholder="输入玩家 AccountId 或 昵称 检索...">
+            </div>
+        </div>
+        <div class="col-auto">
+            <button type="submit" class="btn-modern-primary">
+                <i class="bi bi-funnel-fill"></i> 筛选玩家
+            </button>
+        </div>
+        @if (!string.IsNullOrWhiteSpace(ViewBag.Query as string))
+        {
+            <div class="col-auto">
+                <a href="/Players" class="btn-modern-outline">清除条件</a>
+            </div>
+        }
+    </form>
+</div>
+
+<div class="card-modern">
+    <div class="table-responsive">
+        <table class="table-modern">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>账号标识 (AccountId)</th>
+                    <th>玩家昵称</th>
+                    <th>等级</th>
+                    <th>账号状态</th>
+                    <th>最近登录时间</th>
+                    <th class="text-end">管理操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var player in Model)
+                {
+                    <tr>
+                        <td class="fw-bold text-dark">#@player.Id</td>
+                        <td>
+                            <span class="code-pill copyable-code">
+                                <i class="bi bi-person-badge text-muted"></i> @player.AccountId
+                            </span>
+                        </td>
+                        <td>
+                            <div class="d-flex align-items-center gap-2">
+                                <div class="avatar-circle" style="width: 28px; height: 28px; font-size: 11px;">
+                                    @(string.IsNullOrWhiteSpace(player.Nickname) ? "U" : player.Nickname.Substring(0, 1).ToUpper())
+                                </div>
+                                <span class="fw-semibold text-dark">@(string.IsNullOrWhiteSpace(player.Nickname) ? "未命名玩家" : player.Nickname)</span>
+                            </div>
+                        </td>
+                        <td>
+                            <span class="badge-soft badge-soft-info">
+                                <i class="bi bi-stars"></i> Lv.@player.Level
+                            </span>
+                        </td>
+                        <td>
+                            @if (player.IsActive)
+                            {
+                                <span class="badge-soft badge-soft-success">
+                                    <span class="badge-pulse-dot"></span> 正常使用
+                                </span>
+                            }
+                            else
+                            {
+                                <span class="badge-soft badge-soft-danger">
+                                    <span class="badge-pulse-dot"></span> 封禁冻结
+                                </span>
+                            }
+                        </td>
+                        <td class="text-muted" style="font-size: 12px;">
+                            @(player.LastLoginAt.HasValue ? player.LastLoginAt.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") : "从未登录")
+                        </td>
+                        <td class="text-end">
+                            <form asp-action="Toggle" method="post" class="d-inline m-0">
+                                <input type="hidden" name="id" value="@player.Id" />
+                                @if (player.IsActive)
+                                {
+                                    <button type="submit" class="btn-modern-outline btn-modern-sm text-danger" title="停用此玩家账号">
+                                        <i class="bi bi-slash-circle"></i> 冻结
+                                    </button>
+                                }
+                                else
+                                {
+                                    <button type="submit" class="btn-modern-primary btn-modern-sm" style="background: var(--color-teal);" title="解除冻结">
+                                        <i class="bi bi-check-circle"></i> 解除
+                                    </button>
+                                }
+                            </form>
+                        </td>
+                    </tr>
+                }
+
+                @if (!Model.Any())
+                {
+                    <tr>
+                        <td colspan="7" class="text-center py-5 text-muted">
+                            <i class="bi bi-search fs-2 d-block mb-2"></i>
+                            未匹配到符合条件的玩家记录
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+

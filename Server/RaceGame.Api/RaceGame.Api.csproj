@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\RaceGame.Domain\RaceGame.Domain.csproj" />
+        <ProjectReference Include="..\RaceGame.Application\RaceGame.Application.csproj" />
+        <ProjectReference Include="..\RaceGame.Infrastructure\RaceGame.Infrastructure.csproj" />
+        <ProjectReference Include="..\RaceGame.Worker\RaceGame.Worker.csproj" />
+        <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
+        <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.11" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <Folder Include="Middlewares\" />
+    </ItemGroup>
+</Project>

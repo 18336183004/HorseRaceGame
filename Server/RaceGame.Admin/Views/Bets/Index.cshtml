@@ -1,0 +1,126 @@
+@model IEnumerable<RaceGame.Domain.Entities.BetOrder>
+@using RaceGame.Domain.Enums
+@{
+    ViewData["Title"] = "投注订单";
+    int pageNo = ViewBag.Page ?? 1;
+    int pageSize = ViewBag.PageSize ?? 50;
+}
+
+<div class="page-header-row">
+    <div>
+        <h1 class="page-title">🧾 投注订单查询</h1>
+        <p class="page-subtitle">查询玩家下注记录、锁定赔率、派彩状态与审计时间戳</p>
+    </div>
+    <div class="d-flex align-items-center gap-2">
+        <span class="badge-soft badge-soft-primary">
+            当前第 @pageNo 页 (每页 @pageSize 条)
+        </span>
+    </div>
+</div>
+
+<div class="card-modern">
+    <div class="table-responsive">
+        <table class="table-modern">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>注单唯一编号</th>
+                    <th>玩家</th>
+                    <th>轮次ID</th>
+                    <th>玩法 / 押注标的</th>
+                    <th>下注金额</th>
+                    <th>锁定赔率</th>
+                    <th>结算状态</th>
+                    <th>下单时间</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var bet in Model)
+                {
+                    var (statusBadge, statusText) = bet.Status switch
+                    {
+                        RaceGame.Domain.Enums.BetOrderStatus.Pending => ("badge-soft-warning", "待开奖"),
+                        RaceGame.Domain.Enums.BetOrderStatus.Won => ("badge-soft-success", "已中奖"),
+                        RaceGame.Domain.Enums.BetOrderStatus.Lost => ("badge-soft-secondary", "未中奖"),
+                        RaceGame.Domain.Enums.BetOrderStatus.Refunded => ("badge-soft-danger", "已退款"),
+                        RaceGame.Domain.Enums.BetOrderStatus.Cancelled => ("badge-soft-dark", "已作废"),
+                        _ => ("badge-soft-secondary", $"状态({bet.Status})")
+                    };
+                    var isQuinella = string.Equals(bet.PlayType, "QUINELLA", StringComparison.OrdinalIgnoreCase) || !string.IsNullOrEmpty(bet.Combination);
+
+                    <tr>
+                        <td class="fw-bold text-dark">#@bet.Id</td>
+                        <td>
+                            <span class="code-pill copyable-code">
+                                <i class="bi bi-receipt text-muted"></i> @bet.OrderNo
+                            </span>
+                        </td>
+                        <td>
+                            <span class="badge-soft badge-soft-info">
+                                <i class="bi bi-person"></i> 玩家 #@bet.PlayerId
+                            </span>
+                        </td>
+                        <td class="text-muted">轮次 #@bet.RoundId</td>
+                        <td>
+                            @if (isQuinella)
+                            {
+                                <span class="badge-soft badge-soft-warning">
+                                    <i class="bi bi-stars"></i> 连赢 [@(bet.Combination ?? $"{bet.HorseNo}-{bet.SecondHorseNo}")]
+                                </span>
+                            }
+                            else
+                            {
+                                <span class="badge-soft badge-soft-primary">
+                                    <i class="bi bi-trophy"></i> 独赢 @bet.HorseNo 号马
+                                </span>
+                            }
+                        </td>
+                        <td class="fw-bold text-dark">¥@bet.BetAmount.ToString("N2")</td>
+                        <td>
+                            <span class="code-pill text-primary fw-bold">
+                                @bet.LockedOdds.ToString("F2")x
+                            </span>
+                        </td>
+                        <td>
+                            <span class="badge-soft @statusBadge">
+                                <span class="badge-pulse-dot"></span> @statusText
+                            </span>
+                        </td>
+                        <td class="text-muted" style="font-size: 12px;">
+                            @bet.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
+                        </td>
+                    </tr>
+                }
+
+                @if (!Model.Any())
+                {
+                    <tr>
+                        <td colspan="9" class="text-center py-5 text-muted">
+                            <i class="bi bi-receipt fs-2 d-block mb-2"></i>
+                            当前无投注订单记录
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Pagination Footer -->
+    <div class="card-header-flex border-top py-3">
+        <div class="text-muted small">
+            显示第 @pageNo 页数据
+        </div>
+        <div class="d-flex gap-2">
+            @if (pageNo > 1)
+            {
+                <a href="/Bets?page=@(pageNo - 1)&pageSize=@pageSize" class="btn-modern-outline btn-modern-sm">
+                    <i class="bi bi-chevron-left"></i> 上一页
+                </a>
+            }
+            <a href="/Bets?page=@(pageNo + 1)&pageSize=@pageSize" class="btn-modern-outline btn-modern-sm">
+                下一页 <i class="bi bi-chevron-right"></i>
+            </a>
+        </div>
+    </div>
+</div>
+

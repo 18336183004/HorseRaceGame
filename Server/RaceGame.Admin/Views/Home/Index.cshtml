@@ -1,0 +1,347 @@
+@using RaceGame.Domain.Entities
+@using RaceGame.Domain.Enums
+@using System.Text.Json
+@{
+    ViewData["Title"] = "运营管理仪表盘";
+    var rounds = (IEnumerable<RaceRound>?)ViewBag.LatestRounds ?? Enumerable.Empty<RaceRound>();
+    var trendRounds = (IEnumerable<RaceRound>?)ViewBag.RecentTrendRounds ?? Enumerable.Empty<RaceRound>();
+    var topHorses = (IEnumerable<HorseCatalog>?)ViewBag.TopHorses ?? Enumerable.Empty<HorseCatalog>();
+
+    var trendLabels = JsonSerializer.Serialize(trendRounds.Select(r => r.RoundNo.Length > 8 ? r.RoundNo[^6..] : r.RoundNo));
+    var trendAmounts = JsonSerializer.Serialize(trendRounds.Select(r => r.TotalBetAmount));
+    var trendCounts = JsonSerializer.Serialize(trendRounds.Select(r => r.BetCount));
+
+    var totalBetAmount = (decimal)(ViewBag.TotalBet ?? 0m);
+    var todayBetAmount = (decimal)(ViewBag.TodayBet ?? 0m);
+    var settlementRate = (double)(ViewBag.SettlementRate ?? 100.0);
+}
+
+<!-- Page Header Row -->
+<div class="page-header-row">
+    <div>
+        <h1 class="page-title">🏁 运营管理仪表盘</h1>
+        <p class="page-subtitle">实时监控服务端轮次推进、下注吞吐量与活跃状态</p>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="/Horses" class="btn-modern-outline btn-modern-sm">
+            <i class="bi bi-trophy"></i> 马匹配置
+        </a>
+        <a href="/RaceRules" class="btn-modern-outline btn-modern-sm">
+            <i class="bi bi-sliders2"></i> 规则参数
+        </a>
+        <a href="/Logs" class="btn-modern-outline btn-modern-sm">
+            <i class="bi bi-journal-code"></i> 服务日志
+        </a>
+    </div>
+</div>
+
+<!-- Row 1: KPI Stat Cards (Matching Top Stat Row in Reference) -->
+<div class="stat-card-grid">
+    <div class="stat-card">
+        <div class="stat-icon-squircle stat-icon-purple">
+            <i class="bi bi-people-fill"></i>
+        </div>
+        <div class="stat-details">
+            <span class="stat-value">@ViewBag.PlayerCount</span>
+            <span class="stat-label">注册玩家数</span>
+        </div>
+    </div>
+
+    <div class="stat-card">
+        <div class="stat-icon-squircle stat-icon-teal">
+            <i class="bi bi-person-check-fill"></i>
+        </div>
+        <div class="stat-details">
+            <span class="stat-value">@ViewBag.ActivePlayerCount</span>
+            <span class="stat-label">今日活跃玩家</span>
+        </div>
+    </div>
+
+    <div class="stat-card">
+        <div class="stat-icon-squircle stat-icon-orange">
+            <i class="bi bi-coin"></i>
+        </div>
+        <div class="stat-details">
+            <span class="stat-value">¥@totalBetAmount.ToString("N0")</span>
+            <span class="stat-label">累计投注总额</span>
+        </div>
+    </div>
+
+    <div class="stat-card">
+        <div class="stat-icon-squircle stat-icon-pink">
+            <i class="bi bi-graph-up-arrow"></i>
+        </div>
+        <div class="stat-details">
+            <span class="stat-value">¥@todayBetAmount.ToString("N0")</span>
+            <span class="stat-label">今日投注流水</span>
+        </div>
+    </div>
+
+    <div class="stat-card">
+        <div class="stat-icon-squircle stat-icon-blue">
+            <i class="bi bi-flag-fill"></i>
+        </div>
+        <div class="stat-details">
+            <span class="stat-value">@ViewBag.RoundCount</span>
+            <span class="stat-label">比赛推进总轮次</span>
+        </div>
+    </div>
+
+    <div class="stat-card">
+        <div class="stat-icon-squircle stat-icon-amber">
+            <i class="bi bi-trophy-fill"></i>
+        </div>
+        <div class="stat-details">
+            <span class="stat-value">@ViewBag.ActiveHorseCount</span>
+            <span class="stat-label">在售出战马匹</span>
+        </div>
+    </div>
+</div>
+
+<!-- Row 2: Main Trend Chart & Donut Chart (Matching Middle Row in Reference) -->
+<div class="chart-row-main">
+    <!-- Left: Dual Bar Chart + Donut Ring -->
+    <div class="card-modern">
+        <div class="card-header-flex">
+            <h5 class="card-title-h5">
+                <i class="bi bi-bar-chart-line text-primary"></i> 轮次投注流水与下注吞吐走势
+            </h5>
+            <div class="card-action-pills">
+                <span class="pill-tag active">近期轮次</span>
+                <span class="pill-tag">实时</span>
+            </div>
+        </div>
+
+        <div class="trend-chart-body">
+            <div class="bar-chart-area">
+                <canvas id="roundsTrendChart"
+                        data-labels="@trendLabels"
+                        data-amounts="@trendAmounts"
+                        data-counts="@trendCounts"></canvas>
+            </div>
+
+            <!-- Mini Circular Donut Badge (Matching "28%" in reference) -->
+            <div class="donut-stat-aside">
+                <canvas id="miniDonutRing" data-rate="@settlementRate" width="105" height="105"></canvas>
+                <div class="donut-badge-val">
+                    <span class="donut-badge-number">@settlementRate%</span>
+                    <span class="donut-badge-sub">结算率</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="chart-legend-row">
+            <div class="legend-item">
+                <span class="legend-dot" style="background-color: #6C5DD3;"></span>
+                <span>投注流水 (元)</span>
+            </div>
+            <div class="legend-item">
+                <span class="legend-dot" style="background-color: #00D2B5;"></span>
+                <span>注单笔数 (单)</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Right: Donut Chart (Matching "Patients by Gender" in Reference) -->
+    <div class="card-modern">
+        <div class="card-header-flex">
+            <h5 class="card-title-h5">
+                <i class="bi bi-pie-chart text-success"></i> 马匹投注偏好与热度
+            </h5>
+        </div>
+
+        <div style="height: 200px; padding: 0 20px 10px; position: relative;">
+            <canvas id="horseDistChart"></canvas>
+        </div>
+
+        <div class="chart-legend-row flex-wrap" style="gap: 10px; padding-bottom: 20px;">
+            <div class="legend-item">
+                <span class="legend-dot" style="background-color: #6C5DD3;"></span>
+                <span>1号马</span>
+            </div>
+            <div class="legend-item">
+                <span class="legend-dot" style="background-color: #00D2B5;"></span>
+                <span>2号马</span>
+            </div>
+            <div class="legend-item">
+                <span class="legend-dot" style="background-color: #FF754C;"></span>
+                <span>3号马</span>
+            </div>
+            <div class="legend-item">
+                <span class="legend-dot" style="background-color: #FFAE33;"></span>
+                <span>4号马</span>
+            </div>
+            <div class="legend-item">
+                <span class="legend-dot" style="background-color: #4D97FF;"></span>
+                <span>5号马</span>
+            </div>
+            <div class="legend-item">
+                <span class="legend-dot" style="background-color: #FC5A5A;"></span>
+                <span>6号马</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Row 3: Curve Chart, Leaderboard & Purple Card (Matching Bottom Row in Reference) -->
+<div class="bottom-analytics-grid">
+    <!-- Left: Spline Wave Chart (Matching "Time Admitted Today" in Reference) -->
+    <div class="card-modern">
+        <div class="card-header-flex">
+            <h5 class="card-title-h5">
+                <i class="bi bi-activity text-warning"></i> 24小时下注波动曲线
+            </h5>
+            <span class="badge-soft badge-soft-warning">
+                <span class="badge-pulse-dot"></span> 今日动态
+            </span>
+        </div>
+        <div class="curve-chart-body">
+            <canvas id="realtimeWaveChart"></canvas>
+        </div>
+    </div>
+
+    <!-- Middle: Horse Leaderboard (Matching "Patients By Division" in Reference) -->
+    <div class="card-modern">
+        <div class="card-header-flex">
+            <h5 class="card-title-h5">
+                <i class="bi bi-trophy text-primary"></i> 马匹夺冠表现排行榜
+            </h5>
+            <a href="/Horses" class="text-decoration-none small text-muted">全部 ></a>
+        </div>
+        <div class="leaderboard-list">
+            @{
+                int rankIdx = 1;
+                foreach (var horse in topHorses)
+                {
+                    var rankClass = rankIdx == 1 ? "rank-1" : (rankIdx == 2 ? "rank-2" : (rankIdx == 3 ? "rank-3" : ""));
+                    <div class="leaderboard-item">
+                        <div class="rank-badge @rankClass">@rankIdx</div>
+                        <div class="horse-avatar-sm">
+                            <i class="bi bi-award-fill"></i>
+                        </div>
+                        <div class="horse-info-col">
+                            <div class="horse-name-row">
+                                <span>@horse.NameZh</span>
+                                <span class="horse-win-rate">@horse.WinCount 胜 (@horse.WinRate.ToString("F1")%)</span>
+                            </div>
+                            <div class="progress-track-sm">
+                                <div class="progress-fill-sm" style="width: @Math.Min(100, Math.Max(15, (int)horse.WinRate))%;"></div>
+                            </div>
+                        </div>
+                    </div>
+                    rankIdx++;
+                }
+
+                if (!topHorses.Any())
+                {
+                    <div class="text-center text-muted py-4">暂无马匹表现数据</div>
+                }
+            }
+        </div>
+    </div>
+
+    <!-- Right: Purple Highlight Card (Directly Matching Bottom-Right of Reference Image) -->
+    <div class="card-modern card-highlight-purple">
+        <div>
+            <div class="d-flex align-items-center justify-content-between">
+                <span class="fw-bold" style="font-size: 13px; letter-spacing: 0.5px; opacity: 0.9;">
+                    <i class="bi bi-lightning-charge me-1"></i> 实时注单吞吐
+                </span>
+                <span class="badge" style="background: rgba(255,255,255,0.2); font-size: 11px;">活跃</span>
+            </div>
+            <div class="purple-card-val">@ViewBag.BetCount</div>
+            <div class="purple-card-sub">较上周期平稳增长 +18.4%</div>
+        </div>
+
+        <div class="purple-wave-area">
+            <canvas id="purpleCardWave"></canvas>
+        </div>
+    </div>
+</div>
+
+<!-- Row 4: Recent Rounds Table with Modern Container -->
+<div class="card-modern">
+    <div class="card-header-flex">
+        <h5 class="card-title-h5">
+            <i class="bi bi-clock-history text-primary"></i> 最近比赛轮次列表与调度状态
+        </h5>
+        <a href="/Rounds" class="btn-modern-outline btn-modern-sm">查看全部轮次</a>
+    </div>
+
+    <div class="table-responsive">
+        <table class="table-modern">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>轮次编号</th>
+                    <th>当前状态</th>
+                    <th>下注笔数</th>
+                    <th>总投注额</th>
+                    <th>夺冠马匹</th>
+                    <th>下注开始时间 (UTC)</th>
+                    <th>快捷操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var r in rounds)
+                {
+                    var (badgeClass, stateText) = r.State switch
+                    {
+                        RaceState.Betting => ("badge-soft-success", "下注中 (Betting)"),
+                        RaceState.Preparing => ("badge-soft-warning", "准备中 (Preparing)"),
+                        RaceState.Racing => ("badge-soft-primary", "比赛中 (Racing)"),
+                        RaceState.Settlement => ("badge-soft-info", "结算中 (Settlement)"),
+                        RaceState.Finished => ("badge-soft-secondary", "已结束 (Finished)"),
+                        RaceState.Cancelled => ("badge-soft-danger", "已取消 (Cancelled)"),
+                        _ => ("badge-soft-secondary", r.State.ToString())
+                    };
+
+                    <tr>
+                        <td class="fw-bold text-dark">#@r.Id</td>
+                        <td>
+                            <span class="code-pill copyable-code" title="点击复制">
+                                <i class="bi bi-copy text-muted"></i> @r.RoundNo
+                            </span>
+                        </td>
+                        <td>
+                            <span class="badge-soft @badgeClass">
+                                <span class="badge-pulse-dot"></span> @stateText
+                            </span>
+                        </td>
+                        <td class="fw-semibold">@r.BetCount</td>
+                        <td class="fw-bold text-success">¥@r.TotalBetAmount.ToString("N2")</td>
+                        <td>
+                            @if (r.WinnerHorseNo.HasValue)
+                            {
+                                <span class="badge-soft badge-soft-warning">
+                                    <i class="bi bi-trophy-fill"></i> @r.WinnerHorseNo.Value 号马
+                                </span>
+                            }
+                            else
+                            {
+                                <span class="text-muted">-</span>
+                            }
+                        </td>
+                        <td class="text-muted" style="font-size: 12px;">@r.BettingStartAt.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                        <td>
+                            <a href="/Rounds?roundNo=@r.RoundNo" class="btn-modern-outline btn-modern-sm">
+                                详情
+                            </a>
+                        </td>
+                    </tr>
+                }
+
+                @if (!rounds.Any())
+                {
+                    <tr>
+                        <td colspan="8" class="text-center py-5 text-muted">
+                            <i class="bi bi-inbox fs-2 d-block mb-2"></i>
+                            暂无轮次数据
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+

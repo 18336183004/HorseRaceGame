@@ -1,0 +1,134 @@
+@model RaceGame.Domain.Entities.RaceRuleConfig
+@{
+    ViewData["Title"] = "编辑比赛规则";
+}
+
+<div class="page-header-row">
+    <div>
+        <h1 class="page-title">✏️ 配置比赛规则 @Model.ConfigCode (v@Model.Version)</h1>
+        <p class="page-subtitle">修改轮次生命周期时长、算法版本与初始救济金参数</p>
+    </div>
+    <div>
+        <a class="btn-modern-outline" href="/RaceRules">
+            <i class="bi bi-arrow-left"></i> 返回列表
+        </a>
+    </div>
+</div>
+
+<div class="card-modern p-4">
+    <form method="post">
+        <input asp-for="Id" type="hidden" />
+        <div asp-validation-summary="All" class="text-danger mb-3"></div>
+
+        <h5 class="fw-bold mb-3 text-dark">
+            <i class="bi bi-wallet2 text-primary me-2"></i> 核心下注与资金参数
+        </h5>
+        <div class="row g-3 mb-4">
+            <div class="col-md-3">
+                <label class="form-label-modern">最小下注额 (元)</label>
+                <input asp-for="MinBetAmount" class="form-control-modern" required />
+            </div>
+            <div class="col-md-3">
+                <label class="form-label-modern">初始注册余额 (元)</label>
+                <input asp-for="InitialWalletBalance" class="form-control-modern" required />
+            </div>
+            <div class="col-md-3">
+                <label class="form-label-modern">救济金冷却等待 (秒)</label>
+                <input asp-for="ReliefWaitSeconds" class="form-control-modern" required />
+            </div>
+            <div class="col-md-3">
+                <label class="form-label-modern">每日救济上限次数</label>
+                <input asp-for="ReliefDailyLimit" class="form-control-modern" required />
+            </div>
+        </div>
+
+        <h5 class="fw-bold mb-3 text-dark pt-3 border-top">
+            <i class="bi bi-stopwatch text-success me-2"></i> 轮次流转时长 (秒)
+        </h5>
+        <div class="row g-3 mb-4">
+            <div class="col-md-3">
+                <label class="form-label-modern">下注时长 (Betting)</label>
+                <input asp-for="BettingDurationSeconds" class="form-control-modern" required />
+            </div>
+            <div class="col-md-3">
+                <label class="form-label-modern">准备时长 (Preparing)</label>
+                <input asp-for="PrepareDurationSeconds" class="form-control-modern" required />
+            </div>
+            <div class="col-md-3">
+                <label class="form-label-modern">比赛跑马时长 (Racing)</label>
+                <input asp-for="RaceDurationSeconds" class="form-control-modern" required />
+            </div>
+            <div class="col-md-3">
+                <label class="form-label-modern">赛后结算间隔 (PostRace)</label>
+                <input asp-for="PostRaceIntervalSeconds" class="form-control-modern" required />
+            </div>
+        </div>
+
+        <h5 class="fw-bold mb-3 text-dark pt-3 border-top">
+            <i class="bi bi-cpu text-warning me-2"></i> 算法与运算引擎版本
+        </h5>
+        <div class="row g-3">
+            <div class="col-md-3">
+                <label class="form-label-modern">赔率算法版本</label>
+                <input asp-for="OddsAlgorithmVersion" class="form-control-modern" required />
+            </div>
+            <div class="col-md-3">
+                <label class="form-label-modern">赛果算法版本</label>
+                <input asp-for="ResultAlgorithmVersion" class="form-control-modern" required />
+            </div>
+            <div class="col-md-3">
+                <label class="form-label-modern">黑马概率算法版本</label>
+                <input asp-for="BlackHorseAlgorithmVersion" class="form-control-modern" required />
+            </div>
+            <div class="col-md-3">
+                <label class="form-label-modern">数字取整版本</label>
+                <input asp-for="RoundingVersion" class="form-control-modern" required />
+            </div>
+        </div>
+
+        <h5 class="fw-bold mb-3 text-dark pt-3 border-top">
+            <i class="bi bi-shield-exclamation text-danger me-2"></i> 停机维护与彩池风控参数
+        </h5>
+        <div class="row g-3 mb-4">
+            <div class="col-md-2">
+                <label class="form-label-modern">开启维护窗口拦截</label>
+                <div class="form-check form-switch mt-2">
+                    <input asp-for="IsMaintenanceEnabled" class="form-check-input" type="checkbox" />
+                    <label class="form-check-label" for="IsMaintenanceEnabled">启用维护</label>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label-modern">维护开始时间 (UTC)</label>
+                <input asp-for="MaintenanceStartAt" type="datetime-local" class="form-control-modern" />
+            </div>
+            <div class="col-md-3">
+                <label class="form-label-modern">维护结束时间 (UTC)</label>
+                <input asp-for="MaintenanceEndAt" type="datetime-local" class="form-control-modern" />
+            </div>
+            <div class="col-md-2">
+                <label class="form-label-modern">提前弹窗通知 (分钟)</label>
+                <input asp-for="MaintenanceNoticeMinutes" type="number" class="form-control-modern" />
+            </div>
+            <div class="col-md-2">
+                <label class="form-label-modern">单轮最大赔付彩池限额</label>
+                <input asp-for="MaxRoundPayoutLiability" class="form-control-modern" />
+            </div>
+            <div class="col-md-6">
+                <label class="form-label-modern">维护停机通知文本</label>
+                <input asp-for="MaintenanceReason" placeholder="例如：机房网络维护，请耐心等待" class="form-control-modern" />
+            </div>
+            <div class="col-md-3">
+                <label class="form-label-modern">下级负盈利返佣比例</label>
+                <input asp-for="ReferralCommissionRate" class="form-control-modern" />
+            </div>
+        </div>
+
+        <div class="d-flex align-items-center gap-3 mt-4 pt-4 border-top">
+            <button type="submit" class="btn-modern-primary">
+                <i class="bi bi-check2-circle"></i> 保存规则修改
+            </button>
+            <a href="/RaceRules" class="btn-modern-outline">取消</a>
+        </div>
+    </form>
+</div>
+

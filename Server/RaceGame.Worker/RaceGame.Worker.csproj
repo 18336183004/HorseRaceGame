@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\RaceGame.Application\RaceGame.Application.csproj" />
+        <ProjectReference Include="..\RaceGame.Infrastructure\RaceGame.Infrastructure.csproj" />
+        <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.11" />
+    </ItemGroup>
+</Project>

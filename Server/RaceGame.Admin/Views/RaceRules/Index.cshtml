@@ -1,0 +1,88 @@
+@model IEnumerable<RaceGame.Domain.Entities.RaceRuleConfig>
+@{
+    ViewData["Title"] = "比赛规则";
+}
+
+<div class="page-header-row">
+    <div>
+        <h1 class="page-title">⚙️ 比赛规则与阶段周期</h1>
+        <p class="page-subtitle">配置各轮次状态机时间流转参数、算法版本与发布生效状态</p>
+    </div>
+</div>
+
+<div class="card-modern">
+    <div class="table-responsive">
+        <table class="table-modern">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>规则编码</th>
+                    <th>版本</th>
+                    <th>当前生效</th>
+                    <th>下注阶段</th>
+                    <th>准备阶段</th>
+                    <th>赛跑阶段</th>
+                    <th>结算间隔</th>
+                    <th>整轮总周期</th>
+                    <th class="text-end">操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var rule in Model)
+                {
+                    var totalSeconds = rule.BettingDurationSeconds + rule.PrepareDurationSeconds + rule.RaceDurationSeconds + rule.PostRaceIntervalSeconds;
+                    <tr>
+                        <td class="fw-bold text-dark">#@rule.Id</td>
+                        <td>
+                            <span class="code-pill">
+                                @rule.ConfigCode
+                            </span>
+                        </td>
+                        <td>
+                            <span class="badge-soft badge-soft-info">
+                                v@rule.Version
+                            </span>
+                        </td>
+                        <td>
+                            @if (rule.IsActive)
+                            {
+                                <span class="badge-soft badge-soft-success">
+                                    <span class="badge-pulse-dot"></span> 生效中
+                                </span>
+                            }
+                            else
+                            {
+                                <span class="badge-soft badge-soft-secondary">未激活</span>
+                            }
+                        </td>
+                        <td class="fw-semibold">@rule.BettingDurationSeconds 秒</td>
+                        <td class="text-muted">@rule.PrepareDurationSeconds 秒</td>
+                        <td class="fw-semibold text-primary">@rule.RaceDurationSeconds 秒</td>
+                        <td class="text-muted">@rule.PostRaceIntervalSeconds 秒</td>
+                        <td>
+                            <span class="badge-soft badge-soft-primary fw-bold">
+                                <i class="bi bi-stopwatch"></i> @totalSeconds 秒
+                            </span>
+                        </td>
+                        <td class="text-end">
+                            <a class="btn-modern-outline btn-modern-sm" href="/RaceRules/Edit/@rule.Id">
+                                <i class="bi bi-sliders"></i> 配置参数
+                            </a>
+                        </td>
+                    </tr>
+                }
+
+                @if (!Model.Any())
+                {
+                    <tr>
+                        <td colspan="10" class="text-center py-5 text-muted">
+                            <i class="bi bi-sliders2 fs-2 d-block mb-2"></i>
+                            暂无规则配置
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
