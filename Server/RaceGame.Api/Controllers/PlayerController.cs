@@ -246,6 +246,7 @@ public sealed class PlayerController(AppDbContext db, PlayerReferralService refe
                 x.PlayType,
                 x.HorseNo,
                 x.SecondHorseNo,
+                x.ThirdHorseNo,
                 x.Combination,
                 x.BetAmount,
                 x.LockedOdds,

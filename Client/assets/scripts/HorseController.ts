@@ -1,5 +1,6 @@
 import { Color, Component, Graphics, Node, _decorator } from "cc";
 import { HorseVisual2D } from "./HorseVisual2D";
+import { RaceTrack2D } from "./RaceTrack2D";
 
 const { ccclass, property } = _decorator;
 
@@ -21,6 +22,7 @@ export class HorseController extends Component {
     public horseVisual: Node | null = null;
 
     private visual2D: HorseVisual2D | null = null;
+    private raceTrack2D: RaceTrack2D | null = null;
 
     private finishTime = 30;
     private raceStartMs = 0;
@@ -43,12 +45,25 @@ export class HorseController extends Component {
     private lastHoofprintX = -999;
     private isLeftHoof = false;
 
+    // 跑道物理道次索引 [0, 5]
+    private laneIndex = -1;
+
     /** 关联 2D 写实表现组件 */
     public setVisual2D(v: HorseVisual2D | null): void {
         this.visual2D = v;
         if (this.visual2D) {
             this.visual2D.setHorseNo(this.horseNo);
         }
+    }
+
+    /** 设置赛马当前分配的跑道物理道次 (0-5) */
+    public setLaneIndex(idx: number): void {
+        this.laneIndex = idx;
+    }
+
+    /** 关联 2D 赛道组件以触发物理马蹄飞溅粒子 */
+    public setRaceTrack2D(track: RaceTrack2D | null): void {
+        this.raceTrack2D = track;
     }
 
     /** 关联跑道马蹄印图元组件 */
@@ -372,6 +387,13 @@ export class HorseController extends Component {
                     isLeft: this.isLeftHoof,
                 });
                 this.lastHoofprintX = posX;
+
+                // 同步在赛道地表爆发物理马蹄飞溅粒子
+                if (this.raceTrack2D && this.raceTrack2D.isValid) {
+                    const lIdx = this.laneIndex >= 0 ? this.laneIndex : (this.horseNo - 1) % 6;
+                    const laneY = 135 - (lIdx + 1) * 41;
+                    this.raceTrack2D.emitHoofImpact(posX - 14, laneY + hpY, progress >= 0.7 ? 1.4 : 1.0);
+                }
             }
         }
     }

@@ -17,22 +17,12 @@
 进入 PostgreSQL 客户端（如 `psql` 或 Navicat / DBeaver），新建数据库 `racegame`。
 可选择**一键导入汇总脚本**，或**按版本迁移增量执行**：
 
-**方式一：一键完整初始化（推荐新环境）**：
 ```bash
-psql -U postgres -d racegame -f Database/DeployInit/all_in_one_init.sql
-```
+# 1. 表结构与索引初始化 (全量 74 表与全量复合索引)
+psql -U postgres -d racegame -f Database/DeployInit/001_schema.sql
 
-**方式二：按版本逐步迁移执行**：
-```bash
-psql -U postgres -d racegame -f Database/DeployInit/001_initial.sql
-psql -U postgres -d racegame -f Database/DeployInit/002_upgrade_existing_schema.sql
-psql -U postgres -d racegame -f Database/DeployInit/003_seed_default_race_rules.sql
-psql -U postgres -d racegame -f Database/DeployInit/004_add_game_domain_logs.sql
-psql -U postgres -d racegame -f Database/DeployInit/005_add_active_round_partial_index.sql
-psql -U postgres -d racegame -f Database/DeployInit/006_v2_hardening.sql
-psql -U postgres -d racegame -f Database/DeployInit/007_expand_daily_tasks.sql
-psql -U postgres -d racegame -f Database/DeployInit/008_v2_1_features.sql
-psql -U postgres -d racegame -f Database/DeployInit/009_arcade_quinella_mode.sql
+# 2. 基础配置与业务种子数据导入 (全量规则字典、20 匹赛马、40 只小马驹与初始数据)
+psql -U postgres -d racegame -f Database/DeployInit/002_seed_data.sql
 ```
 
 ### 1.3 默认账号一览

@@ -123,6 +123,8 @@ public static class GameRuleDefaults
 {
     /// <summary>单笔下注最低金额。</summary>
     public const decimal MinimumBetAmount = 2m;
+    /// <summary>单笔下注最高金额；超过此值服务端拒绝接单，防止大单破坏奖池公平性。</summary>
+    public const decimal MaximumBetAmount = 10000m;
     /// <summary>新玩家初始游戏币余额。</summary>
     public const decimal InitialWalletBalance = 1000m;
     /// <summary>默认下注阶段时长（秒）。</summary>

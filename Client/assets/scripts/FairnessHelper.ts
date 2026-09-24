@@ -1,4 +1,4 @@
-import { Button, Color, EventTouch, Graphics, Label, Layers, Node, UITransform } from "cc";
+import { Button, Color, EventTouch, Graphics, Label, Layers, Node, UITransform, view } from "cc";
 import { WestAudio } from "./WestAudio";
 import { WestColors, WestStyle } from "./WestTheme";
 import { WestTypography } from "./WestTypography";
@@ -88,15 +88,24 @@ export class FairnessHelper {
         seed: string | null | undefined,
         roundNo = "",
     ): Promise<Node> {
+        const vSize = view.getVisibleSize();
+        const vWidth = Math.max(720, vSize.width);
+        const vHeight = Math.max(1280, vSize.height);
+        const rootTrans = root.getComponent(UITransform);
+        const ax = rootTrans ? rootTrans.anchorX : 0.5;
+        const ay = rootTrans ? rootTrans.anchorY : 0.5;
+        const posX = ax === 0 ? vWidth / 2 : 0;
+        const posY = ay === 0 ? vHeight / 2 : 0;
+
         const mask = new Node("FairnessModalMask");
         mask.layer = root.layer || Layers.Enum.UI_2D;
         root.addChild(mask);
-        mask.setPosition(360, 640);
-        mask.addComponent(UITransform).setContentSize(720, 1280);
+        mask.setPosition(posX, posY, 0);
+        mask.addComponent(UITransform).setContentSize(vWidth, vHeight);
 
         const gMask = mask.addComponent(Graphics);
         gMask.fillColor = new Color(18, 12, 8, 180);
-        gMask.rect(-360, -640, 720, 1280);
+        gMask.rect(-vWidth / 2, -vHeight / 2, vWidth, vHeight);
         gMask.fill();
         mask.on(Node.EventType.TOUCH_START, (event: EventTouch) => {
             event.propagationStopped = true;
@@ -116,6 +125,9 @@ export class FairnessHelper {
         card.addComponent(UITransform).setContentSize(670, 760);
         WestStyle.drawGrandSaloonPanel(card, 670, 760, 16, WestColors.WOOD_DARK, WestColors.BRASS_FRAME);
         card.on(Node.EventType.TOUCH_START, (event: EventTouch) => {
+            event.propagationStopped = true;
+        });
+        card.on(Node.EventType.TOUCH_MOVE, (event: EventTouch) => {
             event.propagationStopped = true;
         });
         card.on(Node.EventType.TOUCH_END, (event: EventTouch) => {

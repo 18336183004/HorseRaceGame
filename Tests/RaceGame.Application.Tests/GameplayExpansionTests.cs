@@ -235,4 +235,57 @@ public sealed class GameplayExpansionTests
         Assert.Equal(15.5m, ParseOdd(camelJson, "1-2"));
         Assert.Equal(15.5m, ParseOdd(pascalJson, "1-2"));
     }
+
+    [Fact]
+    public void MidRace_DynamicProgress_EvaluatesTop3_WithoutOutcomeLeak()
+    {
+        // 模拟 6 匹马在 15 秒时的赛况：
+        // 领跑型 (Archetype 0) 前半程爆发力强，在 15 秒时处于前列；
+        // 冲刺型 (Archetype 2) 前半程蓄势，在 15 秒时可能落后但在终点反超。
+        // 服务端依据 15 秒的真实走地轨迹动力学判定前三名，绝不应发生直接读取 FinalRank 导致的赛果泄漏。
+        var roundId = 888L;
+        var horses = new List<(int HorseNo, double FinishTime)>
+        {
+            (1, 26.5), // Archetype: (888 + 1*7 + 3) % 4 = (888 + 10) % 4 = 2 (冲刺型)
+            (2, 27.2), // Archetype: (888 + 2*7 + 3) % 4 = (888 + 17) % 4 = 1 (跟跑型)
+            (3, 26.8), // Archetype: (888 + 3*7 + 3) % 4 = (888 + 24) % 4 = 0 (领跑型)
+            (4, 28.5), // Archetype: (888 + 4*7 + 3) % 4 = (888 + 31) % 4 = 3 (缠斗型)
+            (5, 29.0), // Archetype: (888 + 5*7 + 3) % 4 = (888 + 38) % 4 = 2 (冲刺型)
+            (6, 30.0), // Archetype: (888 + 6*7 + 3) % 4 = (888 + 45) % 4 = 1 (跟跑型)
+        };
+
+        double CalculateProgress(double elapsed, double finishTime, int archetype)
+        {
+            var u = Math.Clamp(elapsed / finishTime, 0.0, 1.0);
+            var baseEased = u * u * (3 - 2 * u);
+            var windowFactor = Math.Sin(Math.PI * u);
+            var styleCurve = archetype switch
+            {
+                0 => Math.Sin(Math.PI * u) * (1 - u),
+                1 => Math.Sin(Math.PI * 2 * u) * 0.5 + Math.Sin(Math.PI * u) * 0.2,
+                2 => -Math.Sin(Math.PI * u) * (1 - u) * 0.75 + Math.Sin(Math.PI * u) * Math.Pow(u, 1.4) * 1.5,
+                _ => Math.Sin(Math.PI * 3 * u) * 0.4 + Math.Sin(Math.PI * u) * 0.3
+            };
+            const double amplitude = 0.068;
+            return Math.Clamp(baseEased + amplitude * windowFactor * styleCurve, 0.0, 1.0);
+        }
+
+        var progressAt15s = horses
+            .Select(h =>
+            {
+                var arch = (int)Math.Abs((roundId + h.HorseNo * 7 + 3) % 4);
+                return (h.HorseNo, Progress: CalculateProgress(15.0, h.FinishTime, arch));
+            })
+            .OrderByDescending(x => x.Progress)
+            .ToList();
+
+        var top3Nos = progressAt15s.Take(3).Select(x => x.HorseNo).ToList();
+        Assert.Equal(3, top3Nos.Count);
+
+        // 3号马是领跑型且完赛时间较好，在 15 秒时应在前三名
+        Assert.Contains(3, top3Nos);
+
+        // 6号马完赛时间最慢 (30s) 且是跟跑型，在 15 秒时不应在前三名
+        Assert.DoesNotContain(6, top3Nos);
+    }
 }

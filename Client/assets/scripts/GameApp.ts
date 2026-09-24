@@ -5,19 +5,23 @@ import {
     Component,
     director,
     EditBox,
+    EventTouch,
     Graphics,
     HorizontalTextAlignment,
     Label,
     Layers,
     Node,
+    profiler,
     ResolutionPolicy,
     Sprite,
+    Tween,
     UIOpacity,
     UITransform,
     Vec3,
     VerticalTextAlignment,
     tween,
     view,
+    sys,
     _decorator,
 } from "cc";
 import { ApiClient } from "./ApiClient";
@@ -25,11 +29,14 @@ import { ClientConfig } from "./ClientConfig";
 import {
     AchievementClaimResponse,
     AchievementDto,
+    BetDetailDto,
+    BetOrderItemDto,
     BetOrderStatus,
     CharacterDto,
     ClaimCommissionResponse,
     CommentaryItemDto,
     DoubleDownResponseDto,
+    HorseCatalogItemDto,
     NoticeDto,
     PaddockInfoDto,
     PlaceBetResponse,
@@ -37,6 +44,7 @@ import {
     RaceEventPayload,
     RaceHorseDto,
     RaceRoundDto,
+    RaceRulesPublicDto,
     RaceState,
     ReferralSummaryDto,
     TipsterRecommendationDto,
@@ -49,13 +57,17 @@ import {
     TrainResultDto,
     CareResultDto,
     TrialResultDto,
-    BuybackResultDto,
     RanchQualificationTrialDto,
     RanchCatalogDto,
+    RaceHistoryResponseDto,
+    RaceHistoryItemDto,
 } from "./ApiTypes";
 import { HorseController } from "./HorseController";
 import { HorseVisual2D } from "./HorseVisual2D";
+import { HorseAssetRegistry, FoalGrowthStage } from "./HorseAssetRegistry";
 import { HorseGalleryModal } from "./HorseGalleryModal";
+import { HorseSprites } from "./HorseSprites";
+import { RaceTrack2D } from "./RaceTrack2D";
 import { SignalRClient } from "./SignalRClient";
 import { I18n } from "./I18n";
 import { WestAudio } from "./WestAudio";
@@ -67,6 +79,7 @@ import { PariMutuelHelper } from "./PariMutuelHelper";
 import { WestTypography, TypographyLevel } from "./WestTypography";
 import { WestMotion } from "./WestMotion";
 import { WestPerformance, QualityTier } from "./WestPerformance";
+import { WestHaptics } from "./WestHaptics";
 
 const { ccclass, property } = _decorator;
 
@@ -86,94 +99,6 @@ type Page =
     | "notices"
     | "settings"
     | "result";
-
-interface BetOrderItemDto {
-    orderNo: string;
-    roundId: number;
-    playType?: string;
-    horseNo: number;
-    secondHorseNo?: number | null;
-    combination?: string | null;
-    betAmount: number;
-    lockedOdds: number;
-    grossReward?: number;
-    feeRate?: number;
-    feeAmount?: number;
-    netReward: number;
-    status: number;
-    statusReason?: string | null;
-    isDoubleDown?: boolean;
-    doubleDownAmount?: number;
-}
-
-interface BetDetailDto {
-    order: {
-        orderNo: string;
-        roundId: number;
-        playType?: string;
-        horseNo: number;
-        secondHorseNo?: number | null;
-        combination?: string | null;
-        betAmount: number;
-        lockedOdds: number;
-        grossReward: number;
-        feeRate: number;
-        feeAmount: number;
-        netReward: number;
-        status: number;
-        statusReason?: string | null;
-        isDoubleDown?: boolean;
-        doubleDownAmount?: number;
-        createdAt: string;
-        settledAt?: string | null;
-    };
-    race: {
-        id: number;
-        roundNo: string;
-        state: number;
-        winnerHorseNo?: number | null;
-        horses: Array<{
-            horseNo: number;
-            horseNameZhSnapshot?: string;
-            finalRank?: number | null;
-            finishTime?: number | null;
-            isBlackHorse?: boolean | null;
-        }>;
-    } | null;
-    walletTransactions: Array<{
-        transactionType: string;
-        amount: number;
-        balanceBefore: number;
-        balanceAfter: number;
-        feeRate: number;
-        feeAmount: number;
-        createdAt: string;
-    }>;
-}
-
-interface HorseCatalogItemDto {
-    horseId: number;
-    horseCode: string;
-    nameZh: string;
-    nameEn: string;
-    descriptionZh: string;
-    descriptionEn: string;
-    totalRaces: number;
-    winCount: number;
-    winRate: number;
-    rank1Count: number;
-    rank2Count: number;
-    rank3Count: number;
-    rank4Count: number;
-    rank5Count: number;
-    rank6Count: number;
-    rank1Probability: number;
-    rank2Probability: number;
-    rank3Probability: number;
-    rank4Probability: number;
-    rank5Probability: number;
-    rank6Probability: number;
-}
 
 /**
  * 赛马游戏轻量 Cocos UI 主控。
@@ -201,7 +126,27 @@ export class GameApp extends Component {
     private trifectaSecondHorse = 0;
     private trifectaThirdHorse = 0;
     private trackRadarNode: Node | null = null;
+    private raceTrack2D: RaceTrack2D | null = null;
     private liveRankLabel: Label | null = null;
+    /** 赛道整体节点引用，用于摄像机平滑跟踪平移 */
+    private arenaTrackNode: Node | null = null;
+    /** 赛道摄像机目标 X 偏移（跟踪领先马匹，相对舞台中心） */
+    private cameraTargetX = 360;
+    /** 赛道摄像机当前平滑 X（Lerp 插值中间状态） */
+    private cameraCurrentX = 360;
+    /** 赛道摄像机冲刺直道平滑变焦比例 (目标与当前插值) */
+    private cameraTargetScale = 1.0;
+    private cameraCurrentScale = 1.0;
+    /** 终点红白胜利彩带及爆裂彩纸节点与状态 */
+    private finishRibbonNode: Node | null = null;
+    private ribbonUpperHalf: Node | null = null;
+    private ribbonLowerHalf: Node | null = null;
+    private isRibbonBroken = false;
+    private ribbonConfettiG: Graphics | null = null;
+    private readonly ribbonConfettiParticles: Array<{ x: number; y: number; vx: number; vy: number; r: number; color: Color; alpha: number; rot: number; vrot: number }> = [];
+    /** 第一名领跑 1st 👑 动态指示器 */
+    private leaderCrownNode: Node | null = null;
+    private currentLeaderHorseNo = -1;
     private photoFinishModalNode: Node | null = null;
     private isReadySubmitted = false;
     private stableSubTab: "catalog" | "my" = "catalog";
@@ -279,9 +224,65 @@ export class GameApp extends Component {
     private doubleDownBtnNode: Node | null = null;
     private isDoubleDownSubmitted = false;
     private photoFinishBannerNode: Node | null = null;
+    /** 当前屏幕活跃 Toast 节点列表，最多同时展示 3 个 */
+    private readonly activeToastNodes: Node[] = [];
+    /** HUD 余额 Label 引用，用于数字滚动动效（免整页重建） */
+    private balanceLabel: Label | null = null;
+    /** HUD 余额展示值（动效局可与真实余额同步 Lerp） */
+    private balanceLabelDisplayed = 0;
+    private balanceAnimationTimer: ReturnType<typeof setInterval> | null = null;
+    /** 服务端比赛规则快照缓存 */
+    private raceRules: RaceRulesPublicDto | null = null;
+    /** HUD 网络状态指示圆点与延时标签 (#12) */
+    private netDotGraphics: Graphics | null = null;
+    private netLatencyLabel: Label | null = null;
 
     // 下注确认按钮的实时状态刷新回调（比赛阶段切换时无需整页重建）
     private refreshRaceBetButton: (() => void) | null = null;
+
+    /** 当前屏幕自适应逻辑分辨率宽与高 (默认竖屏基准 720x1280) */
+    private viewportWidth = 720;
+    private viewportHeight = 1280;
+
+    /** 获取当前视口自适应高度 */
+    private getViewportHeight(): number {
+        const vSize = view.getVisibleSize();
+        return Math.max(1280, vSize.height);
+    }
+
+    /** 获取当前视口自适应宽度 */
+    private getViewportWidth(): number {
+        const vSize = view.getVisibleSize();
+        return Math.max(720, vSize.width);
+    }
+
+    /** 获取当前视口逻辑中心 Y 坐标 */
+    private getViewportCenterY(): number {
+        return this.getViewportHeight() / 2;
+    }
+
+    /** 获取 TopHud 顶部吸顶 Y 轴偏移量（适配长屏 iPhone / Android 全面屏并避让刘海 SafeArea） */
+    private getTopHudOffsetY(): number {
+        const vHeight = this.getViewportHeight();
+        const insets = this.getSafeAreaInsets();
+        return Math.max(0, (vHeight - 1280) - insets.top);
+    }
+
+    /** 创建全屏遮罩蒙层（自适应全面屏与宽屏长宽，消除上下边缘透光） */
+    private createModalMask(root: Node, color = new Color(0, 0, 0, 220)): Node {
+        const trans = root.getComponent(UITransform);
+        const ax = trans?.anchorX ?? 0.5;
+        const ay = trans?.anchorY ?? 0.5;
+        const posX = ax === 0 ? this.viewportWidth / 2 : 0;
+        const posY = ay === 0 ? this.getViewportCenterY() : 0;
+        const mask = this.box(root, posX, posY, this.viewportWidth, this.viewportHeight, color, 0);
+        mask.setSiblingIndex(99999);
+        mask.on(Node.EventType.TOUCH_START, (e: EventTouch) => { e.propagationStopped = true; });
+        mask.on(Node.EventType.TOUCH_MOVE, (e: EventTouch) => { e.propagationStopped = true; });
+        mask.on(Node.EventType.TOUCH_END, (e: EventTouch) => { e.propagationStopped = true; });
+        mask.on(Node.EventType.TOUCH_CANCEL, (e: EventTouch) => { e.propagationStopped = true; });
+        return mask;
+    }
 
     private getAudioMode(): "WIN" | "QUINELLA" {
         return this.betMode === "QUINELLA" || this.betMode === "EXACTA" || this.betMode === "TRIFECTA" ? "QUINELLA" : "WIN";
@@ -292,16 +293,25 @@ export class GameApp extends Component {
         const root = this.pageRoot || this.node;
         if (!root || !root.isValid) return;
 
+        // 容量上限：超过 3 个 Toast 时主动销毁最早的
+        while (this.activeToastNodes.length >= 3) {
+            const oldest = this.activeToastNodes.shift();
+            if (oldest && oldest.isValid) {
+                oldest.destroy();
+            }
+        }
+
         const toastNode = new Node("ToastNode");
         toastNode.layer = root.layer || Layers.Enum.UI_2D;
         root.addChild(toastNode);
+        this.activeToastNodes.push(toastNode);
 
         const rootTrans = root.getComponent(UITransform);
         const ax = rootTrans ? rootTrans.anchorX : 0.5;
         const ay = rootTrans ? rootTrans.anchorY : 0.5;
-        // 居中偏上：pageRoot (anchor 0,0) 下坐标为 (360, 950)，Canvas (anchor 0.5,0.5) 下坐标为 (0, 310)
-        const posX = ax === 0 ? 360 : 0;
-        const posY = ay === 0 ? 950 : 310;
+        // 居中偏上：pageRoot (anchor 0,0) 下坐标为 (viewportWidth / 2, viewportHeight - 330)，Canvas (anchor 0.5,0.5) 下坐标为 (0, 310)
+        const posX = ax === 0 ? this.viewportWidth / 2 : 0;
+        const posY = ay === 0 ? (this.viewportHeight - 330) : 310;
         toastNode.setPosition(posX, posY, 0);
         toastNode.setSiblingIndex(999999);
 
@@ -333,8 +343,89 @@ export class GameApp extends Component {
                 if (toastNode && toastNode.isValid) {
                     toastNode.destroy();
                 }
+                const idx = this.activeToastNodes.indexOf(toastNode);
+                if (idx !== -1) {
+                    this.activeToastNodes.splice(idx, 1);
+                }
             })
             .start();
+    }
+
+    /**
+     * 余额数字滚动动效：在 HUD 余额 Label 上，把显示数值在 0.6s 内平滑滚动到目标值并闪烁金色效果。
+     * 如果 balanceLabel 不存在（嵌套在已销毁的页面）则无操作。
+     */
+    private animateBalanceChange(newBalance: number): void {
+        this.player && (this.player.balance = newBalance);
+        if (!this.balanceLabel || !this.balanceLabel.isValid) return;
+
+        const startVal = this.balanceLabelDisplayed;
+        const endVal = newBalance;
+        if (Math.abs(endVal - startVal) < 0.01) {
+            this.balanceLabelDisplayed = endVal;
+            this.balanceLabel.string = `💰 ${this.formatMoney(endVal)}`;
+            return;
+        }
+
+        if (this.balanceAnimationTimer !== null) {
+            clearInterval(this.balanceAnimationTimer);
+            this.balanceAnimationTimer = null;
+        }
+
+        const duration = 0.6;
+        const steps = 20;
+        const stepMs = (duration * 1000) / steps;
+        const delta = (endVal - startVal) / steps;
+        let step = 0;
+
+        this.balanceAnimationTimer = setInterval(() => {
+            step++;
+            this.balanceLabelDisplayed = startVal + delta * step;
+            if (this.balanceLabel && this.balanceLabel.isValid) {
+                this.balanceLabel.string = `💰 ${this.formatMoney(this.balanceLabelDisplayed)}`;
+            }
+            if (step >= steps) {
+                if (this.balanceAnimationTimer !== null) {
+                    clearInterval(this.balanceAnimationTimer);
+                    this.balanceAnimationTimer = null;
+                }
+                this.balanceLabelDisplayed = endVal;
+                if (this.balanceLabel && this.balanceLabel.isValid) {
+                    this.balanceLabel.string = `💰 ${this.formatMoney(endVal)}`;
+                    // 闪烁效果：金色 -> 恒定颜色
+                    const lbl = this.balanceLabel;
+                    const origColor = lbl.color.clone();
+                    lbl.color = WestColors.GOLD_BRIGHT;
+                    setTimeout(() => {
+                        if (lbl && lbl.isValid) lbl.color = origColor;
+                    }, 300);
+                }
+            }
+        }, stepMs);
+    }
+
+    /** 刷新 HUD 顶部网络状态圆点与延时读数 (#12)。 */
+    private updateNetworkIndicator(): void {
+        if (!this.netDotGraphics || !this.netDotGraphics.isValid) return;
+        const state = this.signalr?.getConnectionState() ?? "DISCONNECTED";
+        const latency = this.signalr?.getLatencyMs() ?? 0;
+
+        let dotColor = WestColors.BANDANA_RED;
+        if (state === "CONNECTED") {
+            dotColor = latency < 150 ? WestColors.DESERT_SAGE : WestColors.CHALK_YELLOW;
+        } else if (state === "RECONNECTING") {
+            dotColor = WestColors.GOLD_BRIGHT;
+        }
+
+        this.netDotGraphics.clear();
+        this.netDotGraphics.fillColor = dotColor;
+        this.netDotGraphics.circle(0, 0, 5);
+        this.netDotGraphics.fill();
+
+        if (this.netLatencyLabel && this.netLatencyLabel.isValid) {
+            this.netLatencyLabel.string = state === "CONNECTED" ? `${latency}ms` : (state === "RECONNECTING" ? "..." : "OFF");
+            this.netLatencyLabel.color = dotColor;
+        }
     }
 
     /** 顶部悬浮弱网断线重连指示条。 */
@@ -345,8 +436,8 @@ export class GameApp extends Component {
         const rootTrans = root.getComponent(UITransform);
         const ax = rootTrans ? rootTrans.anchorX : 0.5;
         const ay = rootTrans ? rootTrans.anchorY : 0.5;
-        const posX = ax === 0 ? 360 : 0;
-        const posY = ay === 0 ? 1220 : 580;
+        const posX = ax === 0 ? this.viewportWidth / 2 : 0;
+        const posY = ay === 0 ? (this.viewportHeight - 60) : (this.viewportHeight / 2 - 60);
 
         if (!this.networkToastNode || !this.networkToastNode.isValid) {
             const toast = new Node("NetworkToast");
@@ -380,12 +471,25 @@ export class GameApp extends Component {
         }
     }
 
+    /** 安全获取数组，杜绝 null / undefined 调用 forEach / slice 导致的页面崩溃。 */
+    private safeArray<T>(data: unknown): T[] {
+        if (!data) return [];
+        if (Array.isArray(data)) return data as T[];
+        if (typeof data === "object" && data !== null && "items" in data && Array.isArray((data as { items: unknown }).items)) {
+            return (data as { items: T[] }).items;
+        }
+        return [];
+    }
+
     /**
      * Cocos 生命周期入口。
      * 采用竖屏 FIXED_WIDTH、横屏 FIXED_HEIGHT 自适应策略，
      * 彻底消除 SHOW_ALL letterbox 导致的触控坐标与 Web DOM 输入框双重偏移错位。
      */
     public start(): void {
+        if (typeof profiler !== "undefined" && profiler?.hideStats) {
+            profiler.hideStats();
+        }
         view.enableRetina(true);
         this.setupResolutionPolicy();
         view.setResizeCallback(() => {
@@ -427,6 +531,10 @@ export class GameApp extends Component {
                 },
             );
         };
+        if (typeof window !== "undefined") {
+            (window as any).__gameApp = this;
+            (window as any).ApiClient = ApiClient;
+        }
         void this.bootAsync();
     }
 
@@ -462,6 +570,24 @@ export class GameApp extends Component {
         this.raceCommentaryLabel = null;
         this.doubleDownBtnNode = null;
         this.photoFinishBannerNode = null;
+        this.arenaTrackNode = null;
+        this.trackRadarNode = null;
+        this.finishRibbonNode = null;
+        this.ribbonUpperHalf = null;
+        this.ribbonLowerHalf = null;
+        this.ribbonConfettiG = null;
+        this.ribbonConfettiParticles.length = 0;
+        this.leaderCrownNode = null;
+        if (this.balanceAnimationTimer !== null) {
+            clearInterval(this.balanceAnimationTimer);
+            this.balanceAnimationTimer = null;
+        }
+        for (const toast of this.activeToastNodes) {
+            if (toast && toast.isValid) toast.destroy();
+        }
+        this.activeToastNodes.length = 0;
+        this.netDotGraphics = null;
+        this.netLatencyLabel = null;
     }
 
     /** 清理赛场倒计时定时器，避免多次重复进入赛场或切页时产生定时器泄漏。 */
@@ -481,12 +607,15 @@ export class GameApp extends Component {
     }
 
     /** 比赛阶段只更新本地表现，不发起网络请求。 */
-    public update(): void {
+    public update(dt?: number): void {
         if (this.page !== "race" || this.round?.state !== RaceState.Racing) {
             return;
         }
 
         const now = Date.now() + this.serverOffsetMs;
+        if (this.raceTrack2D) {
+            this.raceTrack2D.setRacing(true);
+        }
         for (const controller of this.horses.values()) {
             if (controller && controller.isValid) {
                 controller.syncToServer(now);
@@ -503,6 +632,88 @@ export class GameApp extends Component {
         this.trackInPlayDoubleDown(now);
         // 实时微缩赛道雷达与前三名动态看板刷新
         this.trackMiniRadarAndRanking();
+        // 赛道摄像机平滑跟踪领先马匹与冲刺变焦震颤（基于 dt 的帧率无关指数衰减）
+        this.trackCameraFollow(dt ?? 0.016);
+        // 第一名动态领跑 1st 👑 微皇冠指示器平滑跟随
+        this.updateLeaderCrown(dt ?? 0.016);
+        // 终点拉断胜利彩带与庆典彩屑物理下坠
+        this.trackFinishRibbonAndConfetti(dt ?? 0.016);
+    }
+
+    /**
+     * 赛道摄像机平滑跟踪 (Camera Smooth Follow) 与冲刺特写平滑变焦 (Sprint Zoom 1.12x)。
+     * 在赛程超过 20% 时，找出当前领先马匹的像素 X 坐标，
+     * 计算出令领先马保持在视口中心偏右的 arenaBox X 偏移目标，
+     * 并在最后 30% 冲刺直道逐步推镜至 1.12x，辅以重蹄震颤与超频马蹄节奏；
+     * 赛程结束或比赛未开始时回弹至默认中心位置与 1.0x 视距。
+     */
+    private trackCameraFollow(dt: number): void {
+        if (!this.arenaTrackNode || !this.arenaTrackNode.isValid) return;
+
+        // 收集所有马匹的当前 X 坐标（赛道像素坐标，范围 -270 ~ 270）
+        let leaderLaneX = -270;
+        let leaderProgress = 0;
+        for (const controller of this.horses.values()) {
+            if (controller && controller.isValid) {
+                const p = controller.getProgress();
+                if (p > leaderProgress) {
+                    leaderProgress = p;
+                    leaderLaneX = controller.getLaneX();
+                }
+            }
+        }
+
+        // 动态同步马蹄声节奏：常规巡航 1.0x 步频，最后 30% 冲刺阶段平滑加速至 1.45x (约 420 步/分)
+        if (leaderProgress >= 0.70 && leaderProgress < 0.98) {
+            const sprintCadence = 1.0 + (leaderProgress - 0.70) * 1.5;
+            WestAudio.setGallopCadence(sprintCadence);
+            WestHaptics.sprintPulse();
+        } else if (leaderProgress < 0.70) {
+            WestAudio.setGallopCadence(1.0);
+        }
+
+        // 冲刺直道平滑变焦 (Sprint Dynamic Zoom 1.12x)
+        if (leaderProgress >= 0.70 && leaderProgress < 0.98) {
+            const zoomT = Math.min(1.0, (leaderProgress - 0.70) / 0.15);
+            this.cameraTargetScale = 1.0 + zoomT * 0.12;
+        } else {
+            this.cameraTargetScale = 1.0;
+        }
+
+        // 赛程 < 20% 或 > 96%（接近终点）时复位摄像机到默认中心
+        if (leaderProgress < 0.20 || leaderProgress > 0.96) {
+            this.cameraTargetX = 360;
+        } else {
+            // arenaBox 宽 696px，跑道像素范围 -270 ~ 270（共 540px）
+            // 跑道中心在 arenaBox 局部坐标 X=0，对应 pageRoot 绝对 X = 360
+            // 让领先马保持在视口中心偏左约 60px 处（留出右侧追赶空间）
+            // leaderLaneX 为局部坐标 -270~270，转换到 pageRoot 偏移：360 - leaderLaneX * 0.35
+            const followStrength = 0.35; // 越大跟踪幅度越大（最大偏移 ~94px）
+            const targetRaw = 360 - leaderLaneX * followStrength;
+            // 限制偏移在 [280, 440]，避免赛道两端大幅穿帮
+            this.cameraTargetX = Math.max(280, Math.min(440, targetRaw));
+        }
+
+        // 基于 dt 的指数衰减插值 (Framerate-independent exponential smoothing)
+        const safeDt = Math.max(0.001, Math.min(dt, 0.1));
+        const decayFactor = 1 - Math.exp(-2.5 * safeDt);
+        this.cameraCurrentX += (this.cameraTargetX - this.cameraCurrentX) * decayFactor;
+
+        const scaleDecay = 1 - Math.exp(-3.0 * safeDt);
+        this.cameraCurrentScale += (this.cameraTargetScale - this.cameraCurrentScale) * scaleDecay;
+
+        // 冲刺直道高潮赛道微震颤 (Sprint Tension Micro-Rumble)
+        let rumbleX = 0;
+        let rumbleY = 0;
+        if (leaderProgress >= 0.80 && leaderProgress < 0.98) {
+            const intensity = (leaderProgress - 0.80) / 0.18;
+            rumbleX = (Math.random() - 0.5) * 3.0 * intensity;
+            rumbleY = (Math.random() - 0.5) * 2.0 * intensity;
+        }
+
+        const currentPos = this.arenaTrackNode.getPosition();
+        this.arenaTrackNode.setPosition(this.cameraCurrentX + rumbleX, currentPos.y + rumbleY, 0);
+        this.arenaTrackNode.setScale(this.cameraCurrentScale, this.cameraCurrentScale, 1);
     }
 
     /** 实时微缩赛道雷达与前三名动态看板更新 */
@@ -552,7 +763,7 @@ export class GameApp extends Component {
         // 绘制 6 匹马在微缩雷达上的光标位置
         list.forEach((item) => {
             const rx = -266 + Math.max(0, Math.min(1.0, item.progress)) * 532;
-            const c = horseColors[item.horseNo - 1] || WestColors.GOLD_BRIGHT;
+            const c = horseColors[(item.horseNo - 1) % horseColors.length] || WestColors.GOLD_BRIGHT;
             radarG.fillColor = c;
             radarG.circle(rx, 0, 5);
             radarG.fill();
@@ -573,6 +784,9 @@ export class GameApp extends Component {
     private resetMiniRadarAndRanking(): void {
         if (this.liveRankLabel && this.liveRankLabel.isValid) {
             this.liveRankLabel.string = "🏁 待起跑";
+        }
+        if (this.raceTrack2D) {
+            this.raceTrack2D.setRacing(false);
         }
         if (!this.trackRadarNode || !this.trackRadarNode.isValid) return;
         const radarG = this.trackRadarNode.getComponent(Graphics);
@@ -615,6 +829,232 @@ export class GameApp extends Component {
             radarG.lineWidth = 1;
             radarG.circle(rx, 0, 4.5);
             radarG.stroke();
+        }
+
+        this.cameraTargetScale = 1.0;
+        this.cameraCurrentScale = 1.0;
+        if (this.arenaTrackNode && this.arenaTrackNode.isValid) {
+            this.arenaTrackNode.setScale(1.0, 1.0, 1);
+        }
+        if (this.leaderCrownNode && this.leaderCrownNode.isValid) {
+            this.leaderCrownNode.active = false;
+        }
+        this.currentLeaderHorseNo = -1;
+        this.buildFinishRibbon();
+    }
+
+    /** 构建终点胜利缎带（未拉断的完整紧绷形态） */
+    private buildFinishRibbon(): void {
+        if (!this.finishRibbonNode || !this.finishRibbonNode.isValid) return;
+        this.finishRibbonNode.destroyAllChildren();
+        this.isRibbonBroken = false;
+
+        const ribbonH = 256; // 覆盖 Y: 118 到 Y: -138
+        const upper = new Node("RibbonUpper");
+        upper.layer = this.finishRibbonNode.layer;
+        this.finishRibbonNode.addChild(upper);
+        upper.setPosition(0, 0, 0);
+        const ug = upper.addComponent(Graphics);
+
+        const lower = new Node("RibbonLower");
+        lower.layer = this.finishRibbonNode.layer;
+        this.finishRibbonNode.addChild(lower);
+        lower.setPosition(0, 0, 0);
+        const lg = lower.addComponent(Graphics);
+
+        this.ribbonUpperHalf = upper;
+        this.ribbonLowerHalf = lower;
+
+        // 绘制完整红白绸带（红白斜条纹，带金边）
+        this.drawRibbonSegment(ug, 0, ribbonH / 2);
+        this.drawRibbonSegment(lg, -ribbonH / 2, 0);
+    }
+
+    private drawRibbonSegment(g: Graphics, fromY: number, toY: number): void {
+        g.clear();
+        const h = toY - fromY;
+        // 红色缎带底色
+        g.fillColor = new Color(215, 38, 30, 240);
+        g.rect(-4, fromY, 8, h);
+        g.fill();
+
+        // 烫金细边线
+        g.strokeColor = new Color(245, 210, 80, 255);
+        g.lineWidth = 1.0;
+        g.moveTo(-4, fromY);
+        g.lineTo(-4, toY);
+        g.moveTo(4, fromY);
+        g.lineTo(4, toY);
+        g.stroke();
+
+        // 白色斜纹质感
+        g.strokeColor = new Color(255, 255, 255, 190);
+        g.lineWidth = 2.0;
+        const stripeStep = 18;
+        const startY = Math.floor(fromY / stripeStep) * stripeStep;
+        for (let y = startY; y < toY + stripeStep; y += stripeStep) {
+            g.moveTo(-4, y);
+            g.lineTo(4, y + 6);
+            g.stroke();
+        }
+    }
+
+    /** 触发第一名冲线时拉断胜利缎带 */
+    private breakFinishRibbon(winnerLaneY: number, winnerHorseNo: number): void {
+        if (this.isRibbonBroken) return;
+        this.isRibbonBroken = true;
+        WestHaptics.ribbonSnap();
+
+        // 飘逸动画：上半段向右上回卷，下半段向右下回卷
+        if (this.ribbonUpperHalf && this.ribbonUpperHalf.isValid) {
+            tween(this.ribbonUpperHalf)
+                .to(0.45, { position: new Vec3(22, 14, 0), angle: 32 }, { easing: "quadOut" })
+                .to(0.35, { position: new Vec3(35, 22, 0), angle: 45 }, { easing: "sineIn" })
+                .start();
+        }
+        if (this.ribbonLowerHalf && this.ribbonLowerHalf.isValid) {
+            tween(this.ribbonLowerHalf)
+                .to(0.45, { position: new Vec3(22, -14, 0), angle: -32 }, { easing: "quadOut" })
+                .to(0.35, { position: new Vec3(35, -22, 0), angle: -45 }, { easing: "sineIn" })
+                .start();
+        }
+
+        // 爆裂 28 颗金色与彩色庆典彩屑粒子
+        this.ribbonConfettiParticles.length = 0;
+        const confettiColors = [
+            new Color(255, 215, 0, 255),  // 亮金
+            new Color(220, 40, 40, 255),   // 烈焰红
+            new Color(255, 255, 255, 255), // 纯白
+            new Color(46, 204, 113, 255),  // 翡翠绿
+            new Color(52, 152, 219, 255),  // 宝石蓝
+            new Color(241, 196, 15, 255),  // 暖黄
+        ];
+        for (let i = 0; i < 28; i++) {
+            const angle = (Math.random() - 0.3) * Math.PI; // 主要朝右侧飞溅
+            const spd = 80 + Math.random() * 160;
+            this.ribbonConfettiParticles.push({
+                x: 270,
+                y: winnerLaneY + (Math.random() - 0.5) * 20,
+                vx: Math.cos(angle) * spd,
+                vy: Math.sin(angle) * spd,
+                r: 2.2 + Math.random() * 2.8,
+                color: confettiColors[i % confettiColors.length],
+                alpha: 255,
+                rot: Math.random() * 360,
+                vrot: (Math.random() - 0.5) * 540,
+            });
+        }
+
+        // 音效与振奋广播
+        const m = this.getAudioMode();
+        WestAudio.playRaceFinishFanfare(m);
+        this.shakeScreen(320, 6);
+        this.updateRaceMessage(`🏆 赛道绝杀！${winnerHorseNo}号马率先拉断终点胜利彩带，勇夺桂冠！`);
+    }
+
+    /** 逐帧模拟终点彩屑物理运动与渐隐 */
+    private trackFinishRibbonAndConfetti(dt: number): void {
+        if (!this.ribbonConfettiG || !this.ribbonConfettiG.isValid) return;
+        if (this.ribbonConfettiParticles.length === 0) {
+            this.ribbonConfettiG.clear();
+            return;
+        }
+
+        const g = this.ribbonConfettiG;
+        g.clear();
+
+        for (let i = this.ribbonConfettiParticles.length - 1; i >= 0; i--) {
+            const p = this.ribbonConfettiParticles[i];
+            p.x += p.vx * dt;
+            p.y += p.vy * dt;
+            p.vy -= 90 * dt; // 重力下坠
+            p.rot += p.vrot * dt;
+            p.alpha -= 85 * dt; // ~3秒渐隐
+
+            if (p.alpha <= 0) {
+                this.ribbonConfettiParticles.splice(i, 1);
+                continue;
+            }
+
+            g.fillColor = new Color(p.color.r, p.color.g, p.color.b, Math.floor(p.alpha));
+            // 绘制旋转小彩带片/金屑 (方形纸片感)
+            const rad = (p.rot * Math.PI) / 180;
+            const cos = Math.cos(rad);
+            const sin = Math.sin(rad);
+            const halfW = p.r * 1.5;
+            const halfH = p.r * 0.8;
+
+            g.moveTo(p.x + (-halfW * cos - -halfH * sin), p.y + (-halfW * sin + -halfH * cos));
+            g.lineTo(p.x + (halfW * cos - -halfH * sin), p.y + (halfW * sin + -halfH * cos));
+            g.lineTo(p.x + (halfW * cos - halfH * sin), p.y + (halfW * sin + halfH * cos));
+            g.lineTo(p.x + (-halfW * cos - halfH * sin), p.y + (-halfW * sin + halfH * cos));
+            g.close();
+            g.fill();
+        }
+    }
+
+    /** 更新第一名动态领跑“1st 👑”微皇冠跟随与反超跳跃 */
+    private updateLeaderCrown(dt: number): void {
+        if (!this.leaderCrownNode || !this.leaderCrownNode.isValid) return;
+
+        // 收集所有马匹的进度并排序
+        const list: Array<{ horseNo: number; progress: number; laneX: number; laneIdx: number }> = [];
+        for (const [horseNo, controller] of this.horses.entries()) {
+            if (controller && controller.isValid) {
+                const p = controller.getProgress();
+                const lIdx = (horseNo - 1) % 6;
+                list.push({ horseNo, progress: p, laneX: controller.getLaneX(), laneIdx: lIdx });
+            }
+        }
+
+        if (list.length === 0) {
+            this.leaderCrownNode.active = false;
+            return;
+        }
+
+        list.sort((a, b) => b.progress - a.progress);
+        const leader = list[0];
+
+        // 比赛起步 5% 到 99.8% 冲线区间展示皇冠
+        if (leader.progress >= 0.05 && leader.progress < 0.998) {
+            const laneY = 135 - (leader.laneIdx + 1) * 41;
+            const targetX = leader.laneX + 2;
+            const targetY = laneY + 36; // 浮在马头上空
+
+            if (!this.leaderCrownNode.active) {
+                this.leaderCrownNode.active = true;
+                this.leaderCrownNode.setPosition(targetX, targetY, 0);
+                this.currentLeaderHorseNo = leader.horseNo;
+            } else {
+                // 检测反超切换
+                if (this.currentLeaderHorseNo !== leader.horseNo) {
+                    this.currentLeaderHorseNo = leader.horseNo;
+                    // 触发弹性缩放弹跳：1.35x -> 1.0x
+                    this.leaderCrownNode.setScale(1.35, 1.35, 1);
+                    tween(this.leaderCrownNode)
+                        .to(0.3, { scale: new Vec3(1.0, 1.0, 1) }, { easing: "backOut" })
+                        .start();
+                    // 广播反超
+                    if (leader.progress > 0.25) {
+                        this.updateRaceMessage(`🔥 [领跑反超] ${leader.horseNo}号马突击冲到第1名！头顶冠冕易主！`);
+                    }
+                }
+
+                // 平滑位置插值跟踪
+                const curPos = this.leaderCrownNode.getPosition();
+                const safeDt = Math.max(0.001, Math.min(dt, 0.1));
+                const lerpFactor = 1 - Math.exp(-8.0 * safeDt);
+                const nextX = curPos.x + (targetX - curPos.x) * lerpFactor;
+                const nextY = curPos.y + (targetY - curPos.y) * lerpFactor;
+                this.leaderCrownNode.setPosition(nextX, nextY, 0);
+            }
+
+            // 检测第一名是否触碰终点拉断彩带 (X >= 268)
+            if (leader.laneX >= 268 && !this.isRibbonBroken) {
+                this.breakFinishRibbon(laneY, leader.horseNo);
+            }
+        } else {
+            this.leaderCrownNode.active = false;
         }
     }
 
@@ -767,14 +1207,30 @@ export class GameApp extends Component {
         const elapsedSec = (now - raceStartMs) / 1000;
         const raceDuration = this.round.raceDurationSeconds || 30;
 
-        // 在比赛最后 2.5 秒内且接近终点时展示 PHOTO FINISH 2.0 视觉横幅、激光扫描与微秒判读框
-        if (elapsedSec >= raceDuration - 2.5 && elapsedSec <= raceDuration + 1.2) {
+        // 在比赛最后 2.8 秒内且接近终点时展示 PHOTO FINISH 2.0 视觉横幅、激光扫描与微秒判读框
+        if (elapsedSec >= raceDuration - 2.8 && elapsedSec <= raceDuration + 1.2) {
             if (this.photoFinishBannerNode && !this.photoFinishBannerNode.active) {
                 this.photoFinishBannerNode.active = true;
+                this.photoFinishBannerNode.setScale(1.2, 1.2, 1);
+                tween(this.photoFinishBannerNode)
+                    .to(0.25, { scale: new Vec3(1.0, 1.0, 1) }, { easing: "backOut" })
+                    .start();
+
                 const gap = this.round.photoFinishGapSeconds ?? 0.04;
-                this.updateRaceMessage(`📷 [PHOTO FINISH 毫厘压线裁决] 胜负差距仅 ${gap}s！终点红外激光定格中！`);
+                const cmDiff = (gap * 14.5).toFixed(1);
+                this.updateRaceMessage(`📷 [PHOTO FINISH 毫厘压线绝杀] 冠亚军差距仅 ${gap}s (约 ${cmDiff}cm)！红外激光慢速扫线裁决！`);
                 WestAudio.playNeckAndNeckTension("COMMON");
-                this.shakeScreen(200, 3);
+                WestHaptics.photoFinishTension();
+                this.shakeScreen(260, 4);
+            }
+
+            // 动态心跳微颤动与扫描线左右微扫 (Slit-scan Sweep)
+            if (this.photoFinishBannerNode && this.photoFinishBannerNode.active) {
+                const laser = this.photoFinishBannerNode.getChildByName("LaserLine");
+                if (laser) {
+                    const sweepX = Math.sin(now * 0.008) * 45;
+                    laser.setPosition(sweepX, 0, 0);
+                }
             }
         } else if (elapsedSec > raceDuration + 1.2) {
             if (this.photoFinishBannerNode && this.photoFinishBannerNode.active) {
@@ -840,9 +1296,7 @@ export class GameApp extends Component {
                 targetOrder.betAmount = res.data.newTotalBet;
                 targetOrder.isDoubleDown = true;
                 targetOrder.doubleDownAmount = res.data.additionalDeducted;
-                if (this.player) {
-                    this.player.balance = res.data.currentBalance;
-                }
+                this.animateBalanceChange(res.data.currentBalance);
                 this.updateRaceMessage(`⚡ [追投成功] 追加 $${res.data.additionalDeducted}！总注额提升至 $${res.data.newTotalBet}！`);
                 this.shakeScreen(200, 5);
             }
@@ -857,12 +1311,12 @@ export class GameApp extends Component {
         const modal = new Node("PaddockModal");
         modal.layer = root.layer || Layers.Enum.UI_2D;
         root.addChild(modal);
-        modal.setPosition(360, 640);
+        modal.setPosition(this.viewportWidth / 2, this.getViewportCenterY());
         modal.addComponent(UITransform).setContentSize(680, 720);
         modal.setSiblingIndex(9999);
 
         // 柔和暮色遮罩 (护眼低反差)
-        const mask = this.box(modal, 0, 0, 720, 1280, new Color(18, 12, 8, 175));
+        const mask = this.box(modal, 0, 0, this.viewportWidth, this.viewportHeight, new Color(18, 12, 8, 175));
 
         // 沙龙面板
         const panel = new Node("PaddockPanel");
@@ -931,12 +1385,12 @@ export class GameApp extends Component {
         const modal = new Node("SaloonMinigamesModal");
         modal.layer = root.layer || Layers.Enum.UI_2D;
         root.addChild(modal);
-        modal.setPosition(360, 640);
+        modal.setPosition(this.viewportWidth / 2, this.getViewportCenterY());
         modal.addComponent(UITransform).setContentSize(680, 840);
         modal.setSiblingIndex(9999);
 
         // 柔和暮色遮罩 (护眼低反差)
-        const mask = this.box(modal, 0, 0, 720, 1280, new Color(18, 12, 8, 180));
+        const mask = this.box(modal, 0, 0, this.viewportWidth, this.viewportHeight, new Color(18, 12, 8, 180));
 
         // 边境沙龙主板
         const panel = new Node("SaloonMinigamesPanel");
@@ -1011,7 +1465,7 @@ export class GameApp extends Component {
 
             const prizes = [
                 { text: "💰 5币", color: new Color(180, 140, 60, 255), amount: 5 },
-                { text: "🪙 10币", color: new Color(160, 70, 50, 255), amount: 10 },
+                { text: " 金币 10币", color: new Color(160, 70, 50, 255), amount: 10 },
                 { text: "📣 助威号角", color: new Color(80, 120, 160, 255), amount: 2 },
                 { text: "💎 25大奖", color: new Color(218, 165, 32, 255), amount: 25 },
                 { text: "⚡ 黄金马鞭", color: new Color(130, 90, 150, 255), amount: 2 },
@@ -1104,8 +1558,8 @@ export class GameApp extends Component {
                             .to(1.8, { angle: stopAngle }, { easing: "cubicOut" })
                             .call(() => {
                                 isSpinning = false;
-                                if (prizeData && typeof prizeData.newBalance === "number" && this.player) {
-                                    this.player.balance = prizeData.newBalance;
+                                if (prizeData && typeof prizeData.newBalance === "number") {
+                                    this.animateBalanceChange(prizeData.newBalance);
                                 }
                                 if (isClosed || !wheelNode || !wheelNode.isValid || !balanceSubLabel || !balanceSubLabel.isValid) {
                                     return;
@@ -1115,7 +1569,7 @@ export class GameApp extends Component {
                                 this.shakeScreen(150, 3);
                                 statusLabel.string = `🎉 大吉！命中【${targetPrize.text}】！入账 ${targetPrize.amount} 币！`;
                                 statusLabel.color = WestColors.BANDANA_RED;
-                                this.showToast(`🎰 轮盘命中【${targetPrize.text}】！入账 ${targetPrize.amount} 🪙`, WestColors.GOLD_BRIGHT);
+                                this.showToast(`🎰 轮盘命中【${targetPrize.text}】！入账 ${targetPrize.amount} 金币`, WestColors.GOLD_BRIGHT);
                                 void this.loadPlayer();
                             })
                             .start();
@@ -1226,8 +1680,8 @@ export class GameApp extends Component {
                                 const pSum = p1 + p2;
                                 isSpinning = false;
 
-                                if (data && typeof data.newBalance === "number" && this.player) {
-                                    this.player.balance = data.newBalance;
+                                if (data && typeof data.newBalance === "number") {
+                                    this.animateBalanceChange(data.newBalance);
                                 }
                                 if (isClosed || !diceBalanceSubLabel || !diceBalanceSubLabel.isValid) {
                                     return;
@@ -1239,11 +1693,11 @@ export class GameApp extends Component {
                                     this.shakeScreen(150, 4);
                                     diceStatus.string = `🎉 牛仔大胜！点数 ${pSum} vs 老板 ${bSum}！赢得 4 金币 (净赚 +2 币)！`;
                                     diceStatus.color = WestColors.BANDANA_RED;
-                                    this.showToast("🎲 拼骰大胜！赢得 4 🪙 (净赚 +2 币)", WestColors.GOLD_BRIGHT);
+                                    this.showToast("🎲 拼骰大胜！赢得 4 金币 (净赚 +2 币)", WestColors.GOLD_BRIGHT);
                                 } else if (pSum === bSum) {
                                     diceStatus.string = `🤝 双方战平！点数同为 ${pSum}！原银退还 2 金币！`;
                                     diceStatus.color = WestColors.INK_DARK;
-                                    this.showToast("🎲 双方战平！原银退还 2 🪙", WestColors.PARCHMENT_LIGHT);
+                                    this.showToast("🎲 双方战平！原银退还 2 金币", WestColors.PARCHMENT_LIGHT);
                                 } else {
                                     diceStatus.string = `🌵 老板占优！点数 ${bSum} vs 你的 ${pSum}！胜败乃牛仔常事！`;
                                     diceStatus.color = WestColors.INK_MUTED;
@@ -1287,12 +1741,12 @@ export class GameApp extends Component {
         const modal = new Node("JackpotModal");
         modal.layer = root.layer || Layers.Enum.UI_2D;
         root.addChild(modal);
-        modal.setPosition(360, 640);
+        modal.setPosition(this.viewportWidth / 2, this.getViewportCenterY());
         modal.addComponent(UITransform).setContentSize(600, 400);
         modal.setSiblingIndex(9999);
 
         // 柔和暮色遮罩 (护眼低反差)
-        const mask = this.box(modal, 0, 0, 720, 1280, new Color(18, 12, 8, 175));
+        const mask = this.box(modal, 0, 0, this.viewportWidth, this.viewportHeight, new Color(18, 12, 8, 175));
 
         const panel = new Node("JackpotPanel");
         panel.layer = modal.layer;
@@ -1363,8 +1817,8 @@ export class GameApp extends Component {
         }
 
         // 1. 动态调整 6 条跑道上马匹与起跑门号次序，确保 5 种模式赛道门号及位置完全独立呈现
-        const currentModeHorses = this.getModeHorses(this.betMode);
-        currentModeHorses.forEach((horseItem, newLaneIdx) => {
+        const currentModeHorses = this.getModeHorses(this.betMode) ?? [];
+        (currentModeHorses ?? []).forEach((horseItem, newLaneIdx) => {
             const horseNo = horseItem.horseNo;
             const targetLaneY = 135 - (newLaneIdx + 1) * 41;
             const horseCtrl = this.horses.get(horseNo);
@@ -1421,11 +1875,11 @@ export class GameApp extends Component {
         const trans = root.getComponent(UITransform);
         const ax = trans?.anchorX ?? 0.5;
         const ay = trans?.anchorY ?? 0.5;
-        modal.setPosition(ax === 0 ? 360 : 0, ay === 0 ? 640 : 0, 0);
+        modal.setPosition(ax === 0 ? this.viewportWidth / 2 : 0, ay === 0 ? this.getViewportCenterY() : 0, 0);
         modal.addComponent(UITransform).setContentSize(680, 840);
         modal.setSiblingIndex(99999);
 
-        const mask = this.box(modal, 0, 0, 720, 1280, new Color(18, 12, 8, 200));
+        const mask = this.box(modal, 0, 0, this.viewportWidth, this.viewportHeight, new Color(18, 12, 8, 200));
         const panel = new Node("RulesPanel");
         panel.layer = modal.layer;
         modal.addChild(panel);
@@ -1614,6 +2068,9 @@ export class GameApp extends Component {
 
     private bgCanvasNode: Node | null = null;
     private currentSceneBg: string = "";
+    private ranchDisplayMode: "GALLOP" | "SHOWCASE" | "ORTHO_SIDE" | "ORTHO_FRONT" | "ORTHO_BACK" = "GALLOP";
+    private ranchFoalStageView: FoalGrowthStage = FoalGrowthStage.Adult;
+    private ranchSubTab: "STAGE_2D" | "TRAIN" | "TRIALS" = "STAGE_2D";
 
     /** 【日光边境·八景轮转】根据当前页面实时切换专属自然/建筑背景，全屏动态铺满无死角。 */
     private updatePageBackground(mountNode: Node, page: Page): void {
@@ -1729,6 +2186,34 @@ export class GameApp extends Component {
 
         // 宽屏左右两侧自适应西部沙龙边框
         this.updateWidescreenBorders(mountNode);
+    }
+
+    /** 获取当前屏幕安全区在自适应设计坐标系下的顶部与底部安全边距偏移 */
+    private getSafeAreaInsets(): { top: number; bottom: number; left: number; right: number } {
+        try {
+            if (typeof sys !== "undefined" && sys.getSafeAreaRect) {
+                const safeRect = sys.getSafeAreaRect();
+                const visibleSize = view.getVisibleSize();
+                const frameSize = view.getFrameSize();
+                if (safeRect && frameSize.width > 0 && frameSize.height > 0) {
+                    const scaleX = visibleSize.width / frameSize.width;
+                    const scaleY = visibleSize.height / frameSize.height;
+                    const topInset = Math.max(0, (frameSize.height - (safeRect.y + safeRect.height)) * scaleY);
+                    const bottomInset = Math.max(0, safeRect.y * scaleY);
+                    const leftInset = Math.max(0, safeRect.x * scaleX);
+                    const rightInset = Math.max(0, (frameSize.width - (safeRect.x + safeRect.width)) * scaleX);
+                    return {
+                        top: Math.min(60, topInset),
+                        bottom: Math.min(60, bottomInset),
+                        left: Math.min(40, leftInset),
+                        right: Math.min(40, rightInset),
+                    };
+                }
+            }
+        } catch {
+            // ignore
+        }
+        return { top: 0, bottom: 0, left: 0, right: 0 };
     }
 
     /** 手机竖屏 720x1280 居中原生呈现，宽屏两侧自适应绘制精致西部沙龙胡桃木壁纸边框与黄铜雕花。 */
@@ -1903,9 +2388,15 @@ export class GameApp extends Component {
         const newPageRoot = new Node("Page");
         newPageRoot.layer = Layers.Enum.UI_2D;
         mountNode.addChild(newPageRoot);
-        newPageRoot.setPosition(-360, -640, 0);
+
+        const vHeight = this.getViewportHeight();
+        const vWidth = this.getViewportWidth();
+        this.viewportHeight = vHeight;
+        this.viewportWidth = vWidth;
+
+        newPageRoot.setPosition(-vWidth / 2, -vHeight / 2, 0);
         const trans = newPageRoot.addComponent(UITransform);
-        trans.setContentSize(720, 1280);
+        trans.setContentSize(vWidth, vHeight);
         trans.setAnchorPoint(0, 0);
 
         let newPageOpacity = newPageRoot.getComponent(UIOpacity);
@@ -2197,7 +2688,108 @@ export class GameApp extends Component {
         }, 3000);
     }
 
-    /** 创建纯文字标签，全面接入 v2.1 四级排版阶梯与容器自适应换行，杜绝描述超出卡片边框。 */
+    /**
+     * 中奖金币飞行动效：在结算页面中，从下注票据中心（sourceNode）发射 N 枚金币粒子，
+     * 沿抛物线弧线飞向 HUD 右上角余额胶囊（约 pageRoot 坐标 480, 1228），
+     * 落点时播放一个短暂的环形脉冲波纹，同步触发 playGoldCascade 音效。
+     */
+    private spawnCoinFlyToBalance(sourceNode: Node, coinCount = 12): void {
+        if (!this.pageRoot || !this.pageRoot.isValid) return;
+        if (!sourceNode || !sourceNode.isValid) return;
+
+        // 目标坐标：pageRoot 下 HUD 余额胶囊（buildTopHud 中 goldBox 位置 480, 1228）
+        const targetX = 480;
+        const targetY = 1228;
+
+        // 计算 sourceNode 在 pageRoot 坐标系中的世界位置
+        const worldPos = sourceNode.getWorldPosition();
+        const pageRootTrans = this.pageRoot.getComponent(UITransform);
+        const anchorX = pageRootTrans ? pageRootTrans.anchorX : 0;
+        const anchorY = pageRootTrans ? pageRootTrans.anchorY : 0;
+        const pageWorldPos = this.pageRoot.getWorldPosition();
+        // 将 worldPos 转换为 pageRoot 的局部坐标
+        const localX = worldPos.x - pageWorldPos.x + (anchorX === 0 ? 0 : 0);
+        const localY = worldPos.y - pageWorldPos.y + (anchorY === 0 ? 0 : 0);
+
+        const goldColors = [
+            WestColors.GOLD_BRIGHT,
+            WestColors.GOLD_LEAF,
+            new Color(255, 230, 100, 255),
+            WestColors.BRASS,
+        ];
+
+        for (let i = 0; i < coinCount; i++) {
+            if (!WestPerformance.shouldSpawnParticle(i)) continue;
+
+            const coin = new Node(`CoinFly${i}`);
+            coin.layer = this.pageRoot.layer || Layers.Enum.UI_2D;
+            this.pageRoot.addChild(coin);
+            coin.setSiblingIndex(999990 + i);
+
+            // 初始位置：票据中心附近随机散布
+            const startX = localX + (Math.random() - 0.5) * 160;
+            const startY = localY + (Math.random() - 0.5) * 60;
+            coin.setPosition(startX, startY, 0);
+
+            const coinSize = 14 + Math.random() * 8;
+            coin.addComponent(UITransform).setContentSize(coinSize, coinSize);
+            const cg = coin.addComponent(Graphics);
+            const coinColor = goldColors[i % goldColors.length];
+            cg.fillColor = coinColor;
+            cg.circle(0, 0, coinSize / 2);
+            cg.fill();
+            // 硬币高光
+            cg.fillColor = new Color(255, 255, 220, 120);
+            cg.circle(-coinSize * 0.12, coinSize * 0.1, coinSize * 0.22);
+            cg.fill();
+
+            // 每枚金币的飞行时长与延迟错开，形成动感节奏
+            const delay = (i / coinCount) * 0.35;
+            const duration = 0.55 + Math.random() * 0.25;
+
+            // 弧线中间控制点（向上弧，模拟抛物线）
+            const midX = (startX + targetX) / 2 + (Math.random() - 0.5) * 100;
+            const midY = Math.max(startY, targetY) + 120 + Math.random() * 80;
+
+            // 第一段：飞向弧顶
+            tween(coin)
+                .delay(delay)
+                .to(duration * 0.5, { position: new Vec3(midX, midY, 0) }, { easing: "quadOut" })
+                .to(duration * 0.5, { position: new Vec3(targetX, targetY, 0) }, { easing: "quadIn" })
+                .call(() => {
+                    if (!coin || !coin.isValid) return;
+                    // 落点脉冲波纹
+                    const ripple = new Node("CoinRipple");
+                    ripple.layer = coin.layer;
+                    coin.parent?.addChild(ripple);
+                    ripple.setPosition(targetX, targetY, 0);
+                    ripple.addComponent(UITransform).setContentSize(28, 28);
+                    const rg = ripple.addComponent(Graphics);
+                    rg.strokeColor = WestColors.GOLD_BRIGHT;
+                    rg.lineWidth = 2;
+                    rg.circle(0, 0, 10);
+                    rg.stroke();
+                    let rippleOpacity = ripple.addComponent(UIOpacity);
+                    rippleOpacity = ripple.getComponent(UIOpacity) ?? rippleOpacity;
+                    tween(ripple)
+                        .to(0.25, { scale: new Vec3(2.0, 2.0, 1) }, { easing: "quadOut" })
+                        .start();
+                    tween(rippleOpacity)
+                        .to(0.25, { opacity: 0 })
+                        .call(() => { if (ripple && ripple.isValid) ripple.destroy(); })
+                        .start();
+                    coin.destroy();
+                })
+                .start();
+        }
+
+        // 500ms 后播放金币入袋音效（等到第一批金币快到达目标时）
+        setTimeout(() => {
+            WestAudio.playGoldCascade("WIN");
+        }, 500);
+    }
+
+    /** 创建纯文字标签，全面接入 v2.1 四级排版阶梯与容器自适应，杜绝描述文字折行踩踏与超出边框。 */
     private text(
         parent: Node,
         content: string,
@@ -2207,6 +2799,7 @@ export class GameApp extends Component {
         color = WestColors.INK_BROWN,
         align?: HorizontalTextAlignment,
         maxWidth?: number,
+        overflow?: number,
     ): Label {
         const node = new Node("Label");
         node.layer = parent.layer || Layers.Enum.UI_2D;
@@ -2227,28 +2820,17 @@ export class GameApp extends Component {
             level = "caption";
         }
 
-        // 容器自适应边界检测：杜绝任何描述文字超出卡片边框
-        let effectiveMaxWidth = maxWidth;
-        if (!effectiveMaxWidth) {
-            const parentTrans = parent.getComponent(UITransform);
-            if (parentTrans && parentTrans.width > 70) {
-                let estWidth = 0;
-                for (let i = 0; i < content.length; i++) {
-                    estWidth += content.charCodeAt(i) > 255 ? size * 1.05 : size * 0.6;
-                }
-                const safeParentMax = Math.max(70, parentTrans.width - 24);
-                if (estWidth > safeParentMax) {
-                    effectiveMaxWidth = safeParentMax;
-                }
-            }
-        }
+        // 默认若指定了 maxWidth 且未显式指定 overflow，采用 SHRINK 自动缩小字号容纳，严禁自动向下折行踩踏下行文字
+        const defaultOverflow = overflow !== undefined
+            ? overflow
+            : (maxWidth ? Label.Overflow.SHRINK : Label.Overflow.NONE);
 
         WestTypography.apply(label, level, {
             size,
             color,
             align,
-            maxWidth: effectiveMaxWidth,
-            overflow: effectiveMaxWidth ? Label.Overflow.RESIZE_HEIGHT : Label.Overflow.NONE,
+            maxWidth: maxWidth,
+            overflow: defaultOverflow,
         });
 
         return label;
@@ -2290,30 +2872,93 @@ export class GameApp extends Component {
     }
 
     /**
-     * 统一绑定高灵敏度触控与点击事件，通过 WestMotion 参数化动效引擎驱动。
-     * 支持 v2.1 动效参数（120ms easeOutBack + 0.94 缩放回弹）、音画绑定与 200ms 防抖防重。
+     * 统一绑定高灵敏度触控与点击事件，提供瞬时零延迟按压反馈、手指微颤容差 (35px) 与防抖机制。
+     * - TOUCH_START: 立即缩放到 0.94 并播放按压音效，提供 0ms 实体按键触感
+     * - TOUCH_MOVE: 监测移动距离，允许 35px 内的手指微晃；超限则视为滑动，取消触发
+     * - TOUCH_END: 瞬时触发 onClick()，无 120ms 动效等待延迟，并平滑回弹至 1.0
+     * - 支持桌面鼠标与移动端触摸统一调度，杜绝漏触与误关
      */
     private bindClick(node: Node, onClick: () => void, isCoreAction = false): void {
-        const btn = node.getComponent(Button) || node.addComponent(Button);
-        btn.transition = Button.Transition.NONE;
         let lastTrigger = 0;
-        const trigger = (): void => {
+        let startX = 0;
+        let startY = 0;
+        let isTouching = false;
+        const originalScale = node.getScale();
+
+        const triggerAction = (): void => {
             const now = Date.now();
             if (now - lastTrigger < 200) {
                 return;
             }
             lastTrigger = now;
-            WestMotion.playButtonPress(node, isCoreAction, () => {
+            try {
                 onClick();
-            });
+            } catch (err) {
+                console.error("bindClick error:", err);
+            }
         };
-        // 仅使用 Button.EventType.CLICK，不要同时注册 TOUCH_END，
-        // 否则 Button 组件内部已经将 touch → click 事件转发，重复注册会导致
-        // 事件调度竞争与触控坐标二次变换偏移。
-        node.on(Button.EventType.CLICK, trigger, this);
+
+        const onPressDown = (loc?: { x: number; y: number }): void => {
+            isTouching = true;
+            if (loc) {
+                startX = loc.x;
+                startY = loc.y;
+            }
+            if (isCoreAction) {
+                WestAudio.playRevolverCock("COMMON");
+            } else {
+                WestAudio.playLeatherPress("COMMON");
+            }
+            Tween.stopAllByTarget(node);
+            tween(node)
+                .to(0.04, { scale: new Vec3(originalScale.x * 0.94, originalScale.y * 0.94, originalScale.z) }, { easing: "sineOut" })
+                .start();
+        };
+
+        const onPressUp = (triggerClick: boolean): void => {
+            if (!isTouching) return;
+            isTouching = false;
+            Tween.stopAllByTarget(node);
+            tween(node)
+                .to(0.08, { scale: originalScale }, { easing: "backOut" })
+                .start();
+
+            if (triggerClick) {
+                triggerAction();
+            }
+        };
+
+        node.on(Node.EventType.TOUCH_START, (e: EventTouch) => {
+            e.propagationStopped = true;
+            const loc = e.getUILocation();
+            onPressDown(loc);
+        }, this);
+
+        node.on(Node.EventType.TOUCH_MOVE, (e: EventTouch) => {
+            e.propagationStopped = true;
+            if (!isTouching) return;
+            const loc = e.getUILocation();
+            const dist = Math.hypot(loc.x - startX, loc.y - startY);
+            if (dist > 35) {
+                onPressUp(false);
+            }
+        }, this);
+
+        node.on(Node.EventType.TOUCH_END, (e: EventTouch) => {
+            e.propagationStopped = true;
+            if (!isTouching) return;
+            const loc = e.getUILocation();
+            const dist = Math.hypot(loc.x - startX, loc.y - startY);
+            onPressUp(dist <= 35);
+        }, this);
+
+        node.on(Node.EventType.TOUCH_CANCEL, (e?: EventTouch) => {
+            if (e) e.propagationStopped = true;
+            onPressUp(false);
+        }, this);
     }
 
-    /** 创建可点击按钮，使用 Cocos 原生 Button 组件与轻微按压缩放反馈。 */
+    /** 创建可点击按钮，保证移动端最小 38px 触控热区。 */
     private button(
         parent: Node,
         title: string,
@@ -2327,6 +2972,10 @@ export class GameApp extends Component {
         fontSize = 24,
     ): Node {
         const node = this.box(parent, x, y, width, height, btnColor);
+        const ut = node.getComponent(UITransform);
+        if (ut) {
+            ut.setContentSize(Math.max(width, 48), Math.max(height, 38));
+        }
         this.text(node, title, 0, 0, fontSize, textColor);
         this.bindClick(node, onClick);
         return node;
@@ -2457,7 +3106,7 @@ export class GameApp extends Component {
         return node;
     }
 
-    /** 创建复古酒馆木质招牌按钮（挂链铁环、黄铜边框、雕刻原木面）。 */
+    /** 创建复古酒馆木质招牌按钮（挂链铁环、黄铜边框、雕刻原木面，保证移动端最小 38px 触控热区）。 */
     private saloonButton(
         parent: Node,
         title: string,
@@ -2473,7 +3122,9 @@ export class GameApp extends Component {
         node.layer = parent.layer || Layers.Enum.UI_2D;
         parent.addChild(node);
         node.setPosition(x, y);
-        node.addComponent(UITransform).setContentSize(width, height);
+        const hitW = Math.max(width, 48);
+        const hitH = Math.max(height, 38);
+        node.addComponent(UITransform).setContentSize(hitW, hitH);
         WestStyle.drawSaloonSign(node, width, height, 8, isHighlight);
 
         this.text(
@@ -2577,18 +3228,30 @@ export class GameApp extends Component {
         return badges || "★";
     }
 
-    /** 在弹窗面板右上角添加精致的关闭 (✕) 小按钮 */
+    /** 在弹窗面板右上角添加精致的关闭 (✕) 按钮（符合 44x44 触控基准） */
     private addModalCloseBtn(panel: Node, panelW: number, panelH: number, onClose: () => void): Node {
-        const btn = this.box(panel, panelW / 2 - 30, panelH / 2 - 28, 34, 34, WestColors.WOOD_DARK, 6);
+        const btn = this.box(panel, panelW / 2 - 32, panelH / 2 - 28, 44, 44, WestColors.WOOD_DARK, 8);
         const g = btn.getComponent(Graphics);
         if (g) {
             g.strokeColor = WestColors.BRASS_FRAME;
             g.lineWidth = 1.2;
             g.stroke();
         }
-        this.text(btn, "✕", 0, 0, 16, WestColors.GOLD_BRIGHT);
+        this.text(btn, "✕", 0, 0, 18, WestColors.GOLD_BRIGHT);
         this.bindClick(btn, onClose);
         return btn;
+    }
+
+    /** 为弹窗容器设置防穿透与遮罩安全关闭：弹窗内部点击不穿透冒泡，点击外部遮罩安全关闭 */
+    private attachModalShield(mask: Node, modalBox: Node, onClose?: () => void): void {
+        modalBox.on(Node.EventType.TOUCH_START, (e: EventTouch) => { e.propagationStopped = true; });
+        modalBox.on(Node.EventType.TOUCH_MOVE, (e: EventTouch) => { e.propagationStopped = true; });
+        modalBox.on(Node.EventType.TOUCH_END, (e: EventTouch) => { e.propagationStopped = true; });
+        modalBox.on(Node.EventType.TOUCH_CANCEL, (e?: EventTouch) => { if (e) e.propagationStopped = true; });
+        this.bindClick(mask, () => {
+            if (onClose) onClose();
+            else if (mask && mask.isValid) mask.destroy();
+        });
     }
 
     /** 商城购买高额金币防误触二次确认弹窗 */
@@ -2597,8 +3260,7 @@ export class GameApp extends Component {
         if (!root || !root.isValid) return;
 
         const isEn = I18n.getLocale() === "en-US";
-        const mask = this.box(root, 360, 640, 720, 1280, new Color(0, 0, 0, 220), 0);
-        mask.setSiblingIndex(99999);
+        const mask = this.createModalMask(root, new Color(0, 0, 0, 220));
 
         const modalBox = this.grandSaloonBox(mask, 0, 0, 560, 340, 16, WestColors.WOOD_DARK, WestColors.GOLD_METALLIC);
         WestMotion.playModalEnter(modalBox, mask);
@@ -2608,7 +3270,7 @@ export class GameApp extends Component {
                 if (mask && mask.isValid) mask.destroy();
             });
         };
-        this.bindClick(mask, closeModal);
+        this.attachModalShield(mask, modalBox, closeModal);
         this.addModalCloseBtn(modalBox, 560, 340, closeModal);
 
         const titleBox = this.chalkboardBox(modalBox, 0, 125, 500, 40, 6);
@@ -2618,7 +3280,7 @@ export class GameApp extends Component {
         this.text(contentBox, `🎁 ${title}`, 0, 24, 20, WestColors.INK_DARK);
         this.text(
             contentBox,
-            isEn ? `Spend ${this.formatMoney(price)} 🪙 to acquire this item?` : `是否消耗 ${this.formatMoney(price)} 🪙 购置该特许装备？`,
+            isEn ? `Spend ${this.formatMoney(price)} 金币 to acquire this item?` : `是否消耗 ${this.formatMoney(price)} 金币 购置该特许装备？`,
             0,
             -16,
             14,
@@ -2661,11 +3323,15 @@ export class GameApp extends Component {
         const level = player?.character?.level ?? player?.level ?? 1;
         const title = this.getPlayerTitle(level);
         const badges = this.getBadgeString(level);
-
+        const insets = this.getSafeAreaInsets();
         const hudRoot = new Node("TopHudContainer");
         hudRoot.layer = root.layer || Layers.Enum.UI_2D;
         root.addChild(hudRoot);
         hudRoot.setSiblingIndex(9998);
+        const topOffsetY = this.getTopHudOffsetY();
+        if (topOffsetY !== 0) {
+            hudRoot.setPosition(0, topOffsetY, 0);
+        }
 
         // 1. 顶部老橡木双层底板容器 (LEATHER_MEDIUM + BRASS)
         this.woodBox(hudRoot, 360, 1228, 700, 84, 14, WestColors.LEATHER_MEDIUM, WestColors.BRASS);
@@ -2705,7 +3371,7 @@ export class GameApp extends Component {
             hudRoot,
             streakText,
             98,
-            1226,
+            1228,
             isEn ? 11 : 12,
             WestColors.GOLD_BRIGHT,
             HorizontalTextAlignment.LEFT,
@@ -2713,18 +3379,18 @@ export class GameApp extends Component {
 
         // 6. 经验进度条（深木槽 + 仙人掌绿充能）
         const exp = player?.exp ?? 0;
-        this.box(hudRoot, 148, 1205, 100, 8, WestColors.WOOD_FRAME, 4);
-        const expFillWidth = Math.min(100, Math.max(8, (exp % 10) * 10));
+        this.box(hudRoot, 142, 1205, 88, 7, WestColors.WOOD_FRAME, 3);
+        const expFillWidth = Math.min(88, Math.max(6, (exp % 10) * 8.8));
         this.box(
             hudRoot,
-            148 - 50 + expFillWidth / 2,
+            142 - 44 + expFillWidth / 2,
             1205,
             expFillWidth,
-            8,
+            7,
             WestColors.DESERT_SAGE,
-            4,
+            3,
         );
-        this.text(hudRoot, `Exp:${exp}`, 220, 1205, 11, WestColors.PARCHMENT_BORDER);
+        this.text(hudRoot, `Exp:${exp}`, 205, 1205, 10, WestColors.PARCHMENT_BORDER, HorizontalTextAlignment.LEFT);
 
         // 7. 西部金币皮囊胶囊 (拓宽至 160px，点击胶囊直达金库账本 wallet，点击 + 号直达商城补给 shop)
         const goldBox = this.woodBox(hudRoot, 480, 1228, 160, 36, 18, WestColors.LEATHER_DARK, WestColors.TURQUOISE);
@@ -2739,14 +3405,18 @@ export class GameApp extends Component {
             gemG.circle(0, 0, 6);
             gemG.stroke();
         }
-        this.text(
+        const initBalance = player?.balance ?? 0;
+        this.balanceLabelDisplayed = initBalance;
+        const balLbl = this.text(
             goldBox,
-            `🪙 ${this.formatMoney(player?.balance ?? 0)}`,
+            `💰 ${this.formatMoney(initBalance)}`,
             -4,
             0,
             14,
             WestColors.GOLD_BRIGHT,
         );
+        // 保存引用供 animateBalanceChange() 原地更新，避免整页重建
+        this.balanceLabel = balLbl;
         this.button(
             goldBox,
             "+",
@@ -2761,6 +3431,52 @@ export class GameApp extends Component {
             WestColors.WOOD_FRAME,
             18,
         );
+
+        // 7.5. 网络连接质量指示胶囊 (#12: 绿/黄/红三态小灯 + 毫秒延时展示，点击弹出公报网络详情)
+        const netBox = this.box(hudRoot, 595, 1228, 54, 30, WestColors.LEATHER_DARK, 6);
+        const netGNode = new Node("NetDot");
+        netGNode.layer = hudRoot.layer || Layers.Enum.UI_2D;
+        netBox.addChild(netGNode);
+        netGNode.setPosition(-16, 0, 0);
+        this.netDotGraphics = netGNode.addComponent(Graphics);
+
+        this.netLatencyLabel = this.text(
+            netBox,
+            this.signalr?.isConnected() ? `${this.signalr.getLatencyMs()}ms` : "OFF",
+            8,
+            0,
+            10,
+            WestColors.DESERT_SAGE,
+        );
+        this.updateNetworkIndicator();
+
+        this.bindClick(netBox, () => {
+            const state = this.signalr?.getConnectionState() ?? "DISCONNECTED";
+            const latency = this.signalr?.getLatencyMs() ?? 0;
+            const isEnLocale = I18n.getLocale() === "en-US";
+            if (state === "CONNECTED") {
+                this.showToast(
+                    isEnLocale
+                        ? `📶 Telegraph Line: Online (${latency}ms latency)`
+                        : `📶 怀俄明柯尔特特区电报线路: 畅通 (${latency}ms 延迟)`,
+                    WestColors.DESERT_SAGE,
+                );
+            } else if (state === "RECONNECTING") {
+                this.showToast(
+                    isEnLocale
+                        ? "⚠️ Telegraph Line: Reconnecting to relay..."
+                        : "⚠️ 怀俄明柯尔特特区电报中继: 线路重连中...",
+                    WestColors.GOLD_BRIGHT,
+                );
+            } else {
+                this.showToast(
+                    isEnLocale
+                        ? "❌ Telegraph Line: Offline"
+                        : "❌ 怀俄明柯尔特特区电报中继: 已断开",
+                    WestColors.BANDANA_RED,
+                );
+            }
+        });
 
         // 8. 设置齿轮按钮（风蚀黄铜木质）
         this.button(
@@ -2811,10 +3527,14 @@ export class GameApp extends Component {
         root: Node,
         currentTab: "tasks" | "feat" | "stable" | "battle" | "rank" | "shop" | "none",
     ): void {
+        const insets = this.getSafeAreaInsets();
         const navRoot = new Node("BottomNavContainer");
         navRoot.layer = root.layer || Layers.Enum.UI_2D;
         root.addChild(navRoot);
         navRoot.setSiblingIndex(9999);
+        if (insets.bottom > 0) {
+            navRoot.setPosition(0, insets.bottom, 0);
+        }
 
         // 底部厚重木纹横梁 (原木本色 + 烧烙印字，暖而不暗)
         this.box(navRoot, 360, 48, 720, 96, WestColors.LEATHER_MEDIUM, 0);
@@ -3226,7 +3946,7 @@ export class GameApp extends Component {
         this.text(saloonBox, "WILD WEST TURF CLUB & SALOON · EST. 1885", 0, 400, 12, WestColors.TEXT_PARCHMENT);
 
         // 3. 通缉令样式的赏金牛仔签到表单面板 (比例协调，垂直紧凑无空虚荒漠)
-        const formCard = this.wantedPosterBox(saloonBox, 0, 130, 620, 460, 12);
+        const formCard = this.wantedPosterBox(saloonBox, 0, 120, 620, 460, 12);
         this.text(formCard, "📜 边境牛仔签到署 (HUNTER SIGN-IN)", 0, 192, 20, WestColors.INK_DARK);
         this.text(formCard, "请输入你在怀俄明马帮名录上登记的凭据手印与金库密匙", 0, 164, 12, WestColors.INK_MUTED);
 
@@ -3286,9 +4006,9 @@ export class GameApp extends Component {
         // 4. 切换去注册页面按钮 (边境牛仔蓝 DENIM_BLUE，圆角 8px)
         this.saloonButton(
             saloonBox,
-            `⭐ 新骑手报到 · 签署牛仔契约入会领 1,000🪙`,
+            `⭐ 新骑手报到 · 签署牛仔契约入会领 1,000 金币`,
             0,
-            -142,
+            -150,
             inputW,
             48,
             () => {
@@ -3306,14 +4026,14 @@ export class GameApp extends Component {
             saloonBox,
             this.message,
             0,
-            -198,
+            -205,
             15,
             isError ? WestColors.BANDANA_RED : WestColors.DESERT_SAGE,
         );
 
         // 6. 边境特区合规与秩序告知卡
-        const noticeCard = this.wantedPosterBox(saloonBox, 0, -285, 620, 74, 6);
-        this.text(noticeCard, "⚖️ 怀俄明柯尔特治安署通告：严格执行公平竞马公约", 0, 14, 14, WestColors.INK_DARK);
+        const noticeCard = this.wantedPosterBox(saloonBox, 0, -305, 620, 84, 6);
+        this.text(noticeCard, "⚖️ 怀俄明柯尔特治安署通告：严格执行公平竞马公约", 0, 16, 14, WestColors.INK_DARK);
         this.text(noticeCard, "全赛道由公证密码算法全天候链上监查 · 认证骑手享有全额财务保障", 0, -14, 12, WestColors.INK_MUTED);
 
         // 7. 西部格言
@@ -3321,7 +4041,7 @@ export class GameApp extends Component {
             saloonBox,
             "🌵 \"黄沙漫卷之处，唯有快枪与良驹永恒\" · 柯尔特特区 1885 🌵",
             0,
-            -440,
+            -420,
             13,
             WestColors.TEXT_MUTED,
         );
@@ -3340,42 +4060,42 @@ export class GameApp extends Component {
         this.text(saloonBox, "ENLIST IN THE FRONTIER DERBY LEAGUE · EST. 1885", 0, 400, 12, WestColors.TEXT_PARCHMENT);
 
         // 3. 通缉令样式的赏金牛仔契约表单面板
-        const formCard = this.wantedPosterBox(saloonBox, 0, 105, 620, 520, 12);
-        this.text(formCard, "📜 签署边境通行契约 (NEW HUNTER DOSSIER)", 0, 222, 20, WestColors.INK_DARK);
-        this.text(formCard, "登记马帮档案并领取初始 1,000 边境马会金币", 0, 194, 12, WestColors.INK_MUTED);
+        const formCard = this.wantedPosterBox(saloonBox, 0, 120, 620, 500, 12);
+        this.text(formCard, "📜 签署边境通行契约 (NEW HUNTER DOSSIER)", 0, 218, 20, WestColors.INK_DARK);
+        this.text(formCard, "登记马帮档案并领取初始 1,000 边境马会金币", 0, 190, 12, WestColors.INK_MUTED);
 
         const inputW = 500;
         const leftAlignX = -inputW / 2;
 
-        this.text(formCard, "👤 登记牛仔账号 (Account):", leftAlignX, 154, 14, WestColors.INK_DARK, HorizontalTextAlignment.LEFT);
+        this.text(formCard, "👤 登记牛仔账号 (Account):", leftAlignX, 144, 14, WestColors.INK_DARK, HorizontalTextAlignment.LEFT);
         const account = this.input(
             formCard,
             I18n.t("register.accountPlaceholder"),
             0,
-            114,
+            106,
             inputW,
             46,
             this.loginDraftAccount,
         );
 
-        this.text(formCard, "🔑 设置金库密匙 (Password):", leftAlignX, 68, 14, WestColors.INK_DARK, HorizontalTextAlignment.LEFT);
+        this.text(formCard, "🔑 设置金库密匙 (Password):", leftAlignX, 58, 14, WestColors.INK_DARK, HorizontalTextAlignment.LEFT);
         const password = this.input(
             formCard,
             I18n.t("register.passwordPlaceholder"),
             0,
-            28,
+            20,
             inputW,
             46,
             "",
             true,
         );
 
-        this.text(formCard, "🔒 确认金库密匙 (Confirm Password):", leftAlignX, -18, 14, WestColors.INK_DARK, HorizontalTextAlignment.LEFT);
+        this.text(formCard, "🔒 确认金库密匙 (Confirm Password):", leftAlignX, -28, 14, WestColors.INK_DARK, HorizontalTextAlignment.LEFT);
         const confirm = this.input(
             formCard,
             I18n.t("register.confirmPasswordPlaceholder"),
             0,
-            -58,
+            -66,
             inputW,
             46,
             "",
@@ -3403,7 +4123,7 @@ export class GameApp extends Component {
             formCard,
             `⭐ ${I18n.t("register.submitBtn")} (ENLIST COWBOY)`,
             0,
-            -152,
+            -155,
             inputW,
             58,
             () => {
@@ -3422,7 +4142,7 @@ export class GameApp extends Component {
             saloonBox,
             `🐎 已有马帮名册？返回大门签到 (BACK TO LOGIN)`,
             0,
-            -185,
+            -175,
             inputW,
             48,
             () => {
@@ -3440,14 +4160,14 @@ export class GameApp extends Component {
             saloonBox,
             this.message,
             0,
-            -238,
+            -230,
             15,
             isError ? WestColors.BANDANA_RED : WestColors.DESERT_SAGE,
         );
 
         // 6. 边境特区合规卡
-        const noticeCard = this.wantedPosterBox(saloonBox, 0, -320, 620, 66, 6);
-        this.text(noticeCard, "⚖️ 恪守边陲骑手誓词：诚信竞逐，严禁多重作弊小号", 0, 10, 13, WestColors.INK_DARK);
+        const noticeCard = this.wantedPosterBox(saloonBox, 0, -315, 620, 76, 6);
+        this.text(noticeCard, "⚖️ 恪守边陲骑手誓词：诚信竞逐，严禁多重作弊小号", 0, 14, 13, WestColors.INK_DARK);
         this.text(noticeCard, "怀俄明州柯尔特特区马会注册认证 · 1885", 0, -14, 11, WestColors.INK_MUTED);
 
         // 7. 西部格言
@@ -3455,7 +4175,7 @@ export class GameApp extends Component {
             saloonBox,
             "🌵 \"一旦跨上马鞍，整个大西部都是你的领地\" · 1885 🌵",
             0,
-            -440,
+            -420,
             13,
             WestColors.TEXT_MUTED,
         );
@@ -3574,6 +4294,44 @@ export class GameApp extends Component {
     }
 
     /**
+     * 大厅远景地平线慢跑马匹剪影与动效 (#11)。
+     * 在背景与前景 UI 之间增加一匹背光、低透明度的西部骏马剪影，伴随轻微颠簸律动缓慢横穿旷野，
+     * 赋予大厅开阔、沉浸的美国西部牧场原野氛围。
+     */
+    private buildLobbyHorseSilhouette(root: Node): void {
+        const strip = new Node("LobbyHorseSilhouetteStrip");
+        strip.layer = root.layer || Layers.Enum.UI_2D;
+        root.addChild(strip);
+        strip.setPosition(0, 1075, 0); // 位于顶部快捷栏与通缉令顶部的旷野地平线空间
+        strip.setSiblingIndex(1); // 放置在最底层，绝不遮挡按钮点击与文字
+
+        const runner = new Node("HorseRunner");
+        runner.layer = root.layer || Layers.Enum.UI_2D;
+        strip.addChild(runner);
+        runner.setPosition(-60, 0, 0);
+
+        let op = runner.addComponent(UIOpacity);
+        op.opacity = 65; // ~25% 低反差透明度
+
+        // 剪影符号与沙尘粒子
+        this.text(runner, "🐎 💨", 0, 0, 20, WestColors.INK_DARK);
+
+        // 14 秒匀速自左向右横穿 720 宽屏并循环往复
+        tween(runner)
+            .set({ position: new Vec3(-60, 0, 0) })
+            .to(14.0, { position: new Vec3(780, 0, 0) })
+            .repeatForever()
+            .start();
+
+        // 奔跑时微弱的上下步态颠簸 (Gait Bobbing)
+        tween(runner)
+            .by(0.22, { position: new Vec3(0, 3, 0) })
+            .by(0.22, { position: new Vec3(0, -3, 0) })
+            .repeatForever()
+            .start();
+    }
+
+    /**
      * 重构后的大厅主界面（美国西部牛仔牧场与沙龙风格，严密网格无任何多余空隙）。
      * 包含顶部老橡木 HUD、吊牌快捷栏、中央主角展台与羊皮纸战绩卡片、进入赛场大马鞍按钮与常驻底部导航。
      */
@@ -3583,6 +4341,8 @@ export class GameApp extends Component {
 
         // 1. 顶部老橡木双层 HUD (Y: 1228, h: 84)
         this.buildTopHud(root);
+        // 1.5 远景旷野慢跑马匹剪影 (#11)
+        this.buildLobbyHorseSilhouette(root);
 
         // 2. 顶部酒馆吊牌快捷工具栏 (Y: 1150, h: 50, w: 160 each)
         this.saloonButton(
@@ -3631,16 +4391,16 @@ export class GameApp extends Component {
         );
 
         // 3. 中央实景木墙与巨大“今日头马”通缉令（Visual Focal Anchor: Giant Wanted Poster on Wood Wall）
-        // 尺寸：696 x 560, 中心坐标 (360, 740)，自上而下严格垂直律动排版
+        // 尺寸：696 x 570, 中心坐标 (360, 775)，黄金分割律动排版，消除与顶部工具栏的空旷裂隙
         const isEn = I18n.getLocale() === "en-US";
-        const wantedPoster = this.wantedPosterBox(root, 360, 740, 696, 560, 10);
+        const wantedPoster = this.wantedPosterBox(root, 360, 775, 696, 570, 10);
 
         // (1) 通缉令复古炭黑抬头与高悬赏
-        this.text(wantedPoster, isEn ? "★ WYOMING DERBY · WANTED POSTER ★" : "★ 怀俄明柯尔特特区 · 今日头马通缉令 ★", 0, 248, 17, WestColors.INK_DARK);
-        this.text(wantedPoster, "WANTED · DEAD OR ALIVE", 0, 216, 25, WestColors.INK_DARK);
-        this.text(wantedPoster, "★ REWARD: 10,000 GOLD COINS ★", 0, 184, 15, WestColors.SEAL_RED);
+        this.text(wantedPoster, isEn ? "★ WYOMING DERBY · WANTED POSTER ★" : "★ 怀俄明柯尔特特区 · 今日头马通缉令 ★", 0, 252, 17, WestColors.INK_DARK);
+        this.text(wantedPoster, "WANTED · DEAD OR ALIVE", 0, 220, 25, WestColors.INK_DARK);
+        this.text(wantedPoster, "★ REWARD: 10,000 GOLD COINS ★", 0, 188, 15, WestColors.SEAL_RED);
 
-        // (2) 左侧：骑师/良驹高反差立绘展示框 (Y = 36, w = 210, h = 210)
+        // (2) 左侧：骑师/良驹高反差立绘展示框 (黄金分割率适配：占宽 38.2%，w = 240, h = 216, X = -185)
         const equippedChar = this.player?.character;
         const defaultJockeyName = isEn
             ? (equippedChar?.nameEn ?? I18n.t("lobby.jockeyNameDefault"))
@@ -3649,7 +4409,7 @@ export class GameApp extends Component {
         const charExp = equippedChar?.exp ?? player?.exp ?? 0;
         const winRate = (Number(player?.winRate ?? 0) * 100).toFixed(1);
 
-        const jockeyAvatarBox = this.woodBox(wantedPoster, -190, 36, 210, 210, 8, WestColors.WOOD_DARK, WestColors.BRASS_FRAME);
+        const jockeyAvatarBox = this.woodBox(wantedPoster, -185, 40, 240, 216, 8, WestColors.WOOD_DARK, WestColors.BRASS_FRAME);
         this.bindClick(jockeyAvatarBox, () => {
             void this.show("characters");
         });
@@ -3658,7 +4418,7 @@ export class GameApp extends Component {
         charCutout.layer = wantedPoster.layer || Layers.Enum.UI_2D;
         jockeyAvatarBox.addChild(charCutout);
         charCutout.setPosition(0, 0, 0);
-        charCutout.addComponent(UITransform).setContentSize(200, 200);
+        charCutout.addComponent(UITransform).setContentSize(228, 206);
         applyWestTexture(charCutout, WEST_TEXTURES.JOCKEY_CHAR);
 
         const lockedTextNode = new Node("LockedText");
@@ -3679,6 +4439,10 @@ export class GameApp extends Component {
                 level: charLevel,
                 winRate: winRate,
                 tag: isEn ? "🏇 [ ACTIVE ]" : "🏇 [ 巡回出战 ACTIVE ]",
+                texture: WEST_TEXTURES.JOCKEY_ARTHUR || WEST_TEXTURES.JOCKEY_CHAR,
+                burstVal: 0.88,
+                burstText: "88%",
+                bullets: 5,
             },
             {
                 name: isEn ? "Billy the Kid" : "比利小子 · 闪电鞭",
@@ -3686,6 +4450,10 @@ export class GameApp extends Component {
                 level: Math.max(1, charLevel - 1),
                 winRate: "68.5",
                 tag: isEn ? "🏇 [ READY ]" : "🏇 [ 候补就绪 READY ]",
+                texture: WEST_TEXTURES.JOCKEY_BILLY || WEST_TEXTURES.JOCKEY_CHAR,
+                burstVal: 0.94,
+                burstText: "94%",
+                bullets: 4,
             },
             {
                 name: isEn ? "Annie Oakley" : "安妮·奥克利",
@@ -3693,52 +4461,20 @@ export class GameApp extends Component {
                 level: 1,
                 winRate: "72.0",
                 tag: isEn ? "🏇 [ STANDBY ]" : "🏇 [ 签约待命 STANDBY ]",
+                texture: WEST_TEXTURES.JOCKEY_ANNIE || WEST_TEXTURES.JOCKEY_CHAR,
+                burstVal: 0.91,
+                burstText: "91%",
+                bullets: 6,
             },
         ];
 
-        // 骑师左右切换木质小按钮（外置左右安全距，绝不压在立绘框边界上）
-        this.button(
-            wantedPoster,
-            "◀",
-            -316,
-            36,
-            28,
-            50,
-            () => {
-                WestAudio.playParchmentFlip();
-                this.activeJockeyIndex = (this.activeJockeyIndex - 1 + jockeyList.length) % jockeyList.length;
-                updateJockeyDisplay();
-            },
-            WestColors.LEATHER_SADDLE,
-            WestColors.GOLD_BRIGHT,
-            18,
-        );
-        this.button(
-            wantedPoster,
-            "▶",
-            -64,
-            36,
-            28,
-            50,
-            () => {
-                WestAudio.playParchmentFlip();
-                this.activeJockeyIndex = (this.activeJockeyIndex + 1) % jockeyList.length;
-                updateJockeyDisplay();
-            },
-            WestColors.LEATHER_SADDLE,
-            WestColors.GOLD_BRIGHT,
-            18,
-        );
-
         // 出战状态标签 (在立绘下方，严谨安全边距)
-        const statusTagPill = this.box(wantedPoster, -190, -92, 210, 28, WestColors.DESERT_SAGE, 14);
+        const statusTagPill = this.box(wantedPoster, -185, -88, 240, 28, WestColors.DESERT_SAGE, 14);
         const statusLabel = this.text(statusTagPill, jockeyList[0].tag, 0, 0, 14, WestColors.GOLD_BRIGHT);
 
-        // (3) 右侧：赏金档案与黄铜机械仪表盘 (点击打开更衣室档案，Y = 36, w = 360, h = 210)
-        const rightDossier = this.box(wantedPoster, 145, 36, 360, 210, new Color(245, 235, 210, 0), 0);
-        this.bindClick(rightDossier, () => {
-            void this.show("characters");
-        });
+        // (3) 右侧：赏金档案与黄铜机械仪表盘 (黄金分割率适配：w = 330, h = 216, X = 145)
+        // 移除非必要整卡全屏点击热区，避免右切换按钮与属性看板触点被截胡误跳 characters 页面
+        const rightDossier = this.box(wantedPoster, 145, 40, 330, 216, new Color(245, 235, 210, 0), 0);
         const cardBoxTitle = this.text(rightDossier, `🤠 ${defaultJockeyName} · ${jockeyList[0].subtitle}`, 0, 80, isEn ? 17 : 19, WestColors.INK_DARK);
         const cardStatsLabel = this.text(
             rightDossier,
@@ -3753,34 +4489,93 @@ export class GameApp extends Component {
         const speedGaugeNode = new Node("LobbySpeedGauge");
         speedGaugeNode.layer = wantedPoster.layer || Layers.Enum.UI_2D;
         rightDossier.addChild(speedGaugeNode);
-        speedGaugeNode.setPosition(-95, -10, 0);
+        speedGaugeNode.setPosition(-85, -10, 0);
         speedGaugeNode.addComponent(UITransform).setContentSize(76, 76);
-        WestStyle.drawSpeedometerGauge(speedGaugeNode, 76, 0.88);
-        this.text(rightDossier, isEn ? "Peak Burst 88%" : "极限爆发 88%", -95, -58, 11, WestColors.INK_DARK);
+        WestStyle.drawSpeedometerGauge(speedGaugeNode, 76, jockeyList[0].burstVal);
+        const burstLabel = this.text(rightDossier, isEn ? "Peak Burst 88%" : "极限爆发 88%", -85, -58, 11, WestColors.INK_DARK);
 
         const bulletBeltNode = new Node("LobbyBulletBelt");
         bulletBeltNode.layer = wantedPoster.layer || Layers.Enum.UI_2D;
         rightDossier.addChild(bulletBeltNode);
         bulletBeltNode.setPosition(95, 2, 0);
         bulletBeltNode.addComponent(UITransform).setContentSize(140, 30);
-        WestStyle.drawBulletBelt(bulletBeltNode, 140, 30, 5, 6);
-        this.text(rightDossier, isEn ? "Stamina 5/6" : "耐力弹药 5/6", 95, -24, 11, WestColors.INK_DARK);
+        WestStyle.drawBulletBelt(bulletBeltNode, 140, 30, jockeyList[0].bullets, 6);
+        const staminaLabel = this.text(rightDossier, isEn ? "Stamina 5/6" : "耐力弹药 5/6", 95, -24, 11, WestColors.INK_DARK);
 
         // 经验条
         const expCap = Math.max(100, charLevel * 50);
         const expPct = Math.min(1, charExp / expCap);
-        const expBarW = 340;
+        const expBarW = 320;
         const expFillW = Math.max(8, expPct * expBarW);
         this.box(rightDossier, 0, -82, expBarW, 14, WestColors.PARCHMENT_BORDER, 7);
         this.box(rightDossier, -expBarW / 2 + expFillW / 2, -82, expFillW, 14, WestColors.DESERT_SAGE, 7);
         this.text(rightDossier, `EXP: ${(expPct * 100).toFixed(1)}% (${charExp}/${expCap})`, 0, -82, 11, WestColors.PARCHMENT_LIGHT);
 
-        // 纯外观装扮提示（位于 Y = -135 独立净空带，彻底杜绝与出战标签碰撞覆盖）
+        const updateJockeyDisplay = (): void => {
+            const j = jockeyList[this.activeJockeyIndex % jockeyList.length];
+            charCutout.active = true;
+            lockedTextNode.active = false;
+            statusLabel.string = j.tag;
+            cardBoxTitle.string = `🤠 ${j.name} · ${j.subtitle}`;
+            cardStatsLabel.string = isEn
+                ? `Win Rate: ${j.winRate}%  |  Level: Lv.${j.level}`
+                : `生涯胜率: ${j.winRate}%  |  等级: Lv.${j.level}`;
+            if (j.texture) {
+                applyWestTexture(charCutout, j.texture);
+            }
+            WestStyle.drawSpeedometerGauge(speedGaugeNode, 76, j.burstVal);
+            burstLabel.string = isEn ? `Peak Burst ${j.burstText}` : `极限爆发 ${j.burstText}`;
+            WestStyle.drawBulletBelt(bulletBeltNode, 140, 30, j.bullets, 6);
+            staminaLabel.string = isEn ? `Stamina ${j.bullets}/6` : `耐力弹药 ${j.bullets}/6`;
+        };
+
+        // 骑师左右切换木质小按钮（后置顶层渲染，触控热区拓展至 46x76 舒适区，阻止冒泡杜绝页面跳转）
+        const prevBtn = this.button(
+            wantedPoster,
+            "◀",
+            -322,
+            40,
+            46,
+            76,
+            () => {
+                WestAudio.playParchmentFlip();
+                this.activeJockeyIndex = (this.activeJockeyIndex - 1 + jockeyList.length) % jockeyList.length;
+                updateJockeyDisplay();
+            },
+            WestColors.LEATHER_SADDLE,
+            WestColors.GOLD_BRIGHT,
+            20,
+        );
+        prevBtn.on(Node.EventType.TOUCH_START, (event: EventTouch) => { event.propagationStopped = true; }, this);
+        prevBtn.on(Node.EventType.TOUCH_END, (event: EventTouch) => { event.propagationStopped = true; }, this);
+
+        const nextBtn = this.button(
+            wantedPoster,
+            "▶",
+            -50,
+            40,
+            46,
+            76,
+            () => {
+                WestAudio.playParchmentFlip();
+                this.activeJockeyIndex = (this.activeJockeyIndex + 1) % jockeyList.length;
+                updateJockeyDisplay();
+            },
+            WestColors.LEATHER_SADDLE,
+            WestColors.GOLD_BRIGHT,
+            20,
+        );
+        nextBtn.on(Node.EventType.TOUCH_START, (event: EventTouch) => { event.propagationStopped = true; }, this);
+        nextBtn.on(Node.EventType.TOUCH_END, (event: EventTouch) => { event.propagationStopped = true; }, this);
+
+        updateJockeyDisplay();
+
+        // 纯外观装扮提示
         this.text(
             wantedPoster,
             isEn ? "★ Cosmetic Only · Affinity perks coming soon · Tap avatar for closet ★" : "★ 角色与鞍具当前为纯外观展示 · 后续版本开放羁绊微幅增益 · 点击头像进更衣室 ★",
             0,
-            -135,
+            -132,
             11,
             WestColors.INK_MUTED,
         );
@@ -3794,7 +4589,7 @@ export class GameApp extends Component {
             wantedPoster,
             isEn ? "★ 5 OFFICIAL DERBY TOURNAMENT ARENAS ★" : "★ 边境赛马会 · 5大顶级官方锦标竞技场 ★",
             0,
-            -152,
+            -149,
             12,
             WestColors.INK_DARK,
         );
@@ -3826,7 +4621,7 @@ export class GameApp extends Component {
                 wantedPoster,
                 item.title,
                 item.x,
-                -188,
+                -185,
                 210,
                 46,
                 () => {
@@ -3838,7 +4633,7 @@ export class GameApp extends Component {
                 true,
                 isEn ? 12 : 14,
             );
-            this.text(wantedPoster, item.subtitle, item.x, -216, 10, WestColors.INK_MUTED);
+            this.text(wantedPoster, item.subtitle, item.x, -213, 10, WestColors.INK_MUTED);
         });
 
         // 第二行：2个进阶千倍大彩池场馆 (二连单精准场、三重彩巅峰场)
@@ -3862,7 +4657,7 @@ export class GameApp extends Component {
                 wantedPoster,
                 item.title,
                 item.x,
-                -248,
+                -245,
                 320,
                 44,
                 () => {
@@ -3880,53 +4675,42 @@ export class GameApp extends Component {
         const posterSeal = new Node("PosterWaxSeal");
         posterSeal.layer = wantedPoster.layer || Layers.Enum.UI_2D;
         wantedPoster.addChild(posterSeal);
-        posterSeal.setPosition(295, -135, 0);
+        posterSeal.setPosition(295, -132, 0);
         posterSeal.addComponent(UITransform).setContentSize(46, 46);
         WestStyle.drawWaxSealStamp(posterSeal, 23);
         WestMotion.playWaxStamp(posterSeal);
 
-        const updateJockeyDisplay = (): void => {
-            const j = jockeyList[this.activeJockeyIndex % jockeyList.length];
-            charCutout.active = true;
-            lockedTextNode.active = false;
-            statusLabel.string = j.tag;
-            cardBoxTitle.string = `🤠 ${j.name} · ${j.subtitle}`;
-            cardStatsLabel.string = isEn
-                ? `Win Rate: ${j.winRate}%  |  Level: Lv.${j.level}`
-                : `生涯胜率: ${j.winRate}%  |  等级: Lv.${j.level}`;
-        };
-
         // 4. 下方非对称实景墙面 (左侧倾斜羊皮纸赛程表 + 右侧马票夹与工具栏)
-        // 增高至 290px，居中 Y = 295，彻底消除底部 124px 荒原空隙
-        // (1) 左侧：羊皮纸赛程表 (Derby Schedule Parchment, w = 328, h = 290, center X = 185, Y = 295)
-        const scheduleBox = this.wantedPosterBox(root, 185, 295, 328, 290, 8);
-        this.text(scheduleBox, isEn ? "📌 Today's Derby" : "📌 今日赛事速报", 0, 112, 17, WestColors.INK_DARK);
+        // 增高至 305px，居中 Y = 310，与底部导航栏 (92px) 和上方通缉令完美衔接
+        // (1) 左侧：羊皮纸赛程表 (Derby Schedule Parchment, w = 328, h = 305, center X = 185, Y = 310)
+        const scheduleBox = this.wantedPosterBox(root, 185, 310, 328, 305, 8);
+        this.text(scheduleBox, isEn ? "📌 Today's Derby" : "📌 今日赛事速报", 0, 118, 17, WestColors.INK_DARK);
 
         const weatherText = this.getWeatherText(this.round?.weather);
         const trackText = this.getTrackText(this.round?.trackType);
         const roundTitleText = this.round
             ? (isEn ? `Round #${this.round.roundNo}` : `第 ${this.round.roundNo} 期`)
             : (isEn ? "No Schedule" : "暂无赛程");
-        this.text(scheduleBox, `🏆 ${roundTitleText}`, 0, 78, 19, WestColors.SEAL_RED);
-        this.text(scheduleBox, `${isEn ? "🏜️ Weather: " : "🏜️ 天气: "}${weatherText}`, 0, 44, 14, WestColors.INK_DARK);
-        this.text(scheduleBox, `${isEn ? "🚩 Track: " : "🚩 赛道: "}${trackText}`, 0, 12, 14, WestColors.INK_DARK);
+        this.text(scheduleBox, `🏆 ${roundTitleText}`, 0, 84, 19, WestColors.SEAL_RED);
+        this.text(scheduleBox, `${isEn ? "🏜️ Weather: " : "🏜️ 天气: "}${weatherText}`, 0, 50, 14, WestColors.INK_DARK);
+        this.text(scheduleBox, `${isEn ? "🚩 Track: " : "🚩 赛道: "}${trackText}`, 0, 18, 14, WestColors.INK_DARK);
 
         // 状态与倒计时粉笔小黑板
-        const schedChalk = this.chalkboardBox(scheduleBox, 0, -34, 285, 38, 6);
+        const schedChalk = this.chalkboardBox(scheduleBox, 0, -30, 285, 38, 6);
         const roundStatusLabel = this.text(schedChalk, this.round ? `${this.stateText(this.round.state)}` : (isEn ? "Pending" : "等待排期"), 0, 0, 14, WestColors.CHALK_YELLOW);
         this.updateLobbyRoundTicker(roundStatusLabel);
 
-        this.text(scheduleBox, isEn ? "⚡ 6 Steeds · Low Rake · Auto-Notarized ⚡" : "⚡ 6驹竞逐 · 4级低抽成 · 自动公证 ⚡", 0, -95, 11, WestColors.INK_MUTED);
+        this.text(scheduleBox, isEn ? "⚡ 6 Steeds · Low Rake · Auto-Notarized ⚡" : "⚡ 6驹竞逐 · 4级低抽成 · 自动公证 ⚡", 0, -98, 11, WestColors.INK_MUTED);
 
-        // (2) 右侧：马票夹与边境军备公报 (Ticket Clip & Saloon Toolbar, w = 328, h = 290, center X = 535, Y = 295)
-        const clipBox = this.grandSaloonBox(root, 535, 295, 328, 290, 10, WestColors.WOOD_DARK, WestColors.BRASS_FRAME);
-        this.text(clipBox, isEn ? "🎫 TICKET CLIP" : "🎫 边境马票夹 · TICKET CLIP", 0, 112, 16, WestColors.GOLD_BRIGHT);
+        // (2) 右侧：马票夹与边境军备公报 (Ticket Clip & Saloon Toolbar, w = 328, h = 305, center X = 535, Y = 310)
+        const clipBox = this.grandSaloonBox(root, 535, 310, 328, 305, 10, WestColors.WOOD_DARK, WestColors.BRASS_FRAME);
+        this.text(clipBox, isEn ? "🎫 TICKET CLIP" : "🎫 边境马票夹 · TICKET CLIP", 0, 118, 16, WestColors.GOLD_BRIGHT);
 
         this.saloonButton(
             clipBox,
             isEn ? "📋 Bounty Tasks" : "📋 今日悬赏 (TASKS)",
             0,
-            56,
+            60,
             285,
             44,
             () => { void this.show("tasks"); },
@@ -3938,7 +4722,7 @@ export class GameApp extends Component {
             clipBox,
             isEn ? "📜 Bet Archives" : "📜 历史注单 (BETS)",
             0,
-            2,
+            6,
             285,
             44,
             () => { void this.show("bets"); },
@@ -3950,7 +4734,7 @@ export class GameApp extends Component {
             clipBox,
             isEn ? "🔄 Sync Derby" : "🔄 刷新局势 (SYNC)",
             0,
-            -52,
+            -48,
             285,
             44,
             () => { void this.refreshLobbyAsync(); },
@@ -3961,7 +4745,7 @@ export class GameApp extends Component {
         const networkStatus = ApiClient.getAccessToken()
             ? (isEn ? "Online" : "正常在线")
             : (isEn ? "Offline" : "离线未登");
-        this.text(clipBox, isEn ? `📡 Net: ${networkStatus} | Wyoming Synced` : `📡 网络: ${networkStatus} | 怀俄明授时`, 0, -110, 12, WestColors.TEXT_MUTED);
+        this.text(clipBox, isEn ? `📡 Net: ${networkStatus} | Wyoming Synced` : `📡 网络: ${networkStatus} | 怀俄明授时`, 0, -108, 12, WestColors.TEXT_MUTED);
 
         // 6. 常驻底部 5-Tab 导航
         this.buildBottomNav(root, "none");
@@ -4029,6 +4813,9 @@ export class GameApp extends Component {
      */
     private async buildRace(): Promise<void> {
         const root = this.pageRoot!;
+        if (!this.raceRules) {
+            await this.loadRaceConfig();
+        }
         await this.refreshRound();
         await this.loadRecentHistory();
 
@@ -4061,16 +4848,18 @@ export class GameApp extends Component {
                 totalAmount?: number;
                 orders?: BetOrderItemDto[];
             }>(`/api/race/${this.round.id}/my-bets`);
-            if (myBetsRes.data?.orders) {
+            if (myBetsRes.data?.orders && Array.isArray(myBetsRes.data.orders)) {
                 myRoundOrders = myBetsRes.data.orders;
                 this.myRoundOrders = myRoundOrders;
                 currentBetTotalAmount = myBetsRes.data.totalAmount ?? 0;
                 if (this.selectedHorse <= 0 && myBetsRes.data.horseNo) {
                     this.selectedHorse = myBetsRes.data.horseNo;
                 }
+            } else {
+                this.myRoundOrders = [];
             }
         } catch {
-            // 忽略未登录或网络临时抖动
+            this.myRoundOrders = [];
         }
 
         // 读取赛前亮相圈贴士与专家推荐
@@ -4087,9 +4876,9 @@ export class GameApp extends Component {
         const saloonHeaderBar = new Node("SaloonHeaderBar");
         saloonHeaderBar.layer = root.layer || Layers.Enum.UI_2D;
         root.addChild(saloonHeaderBar);
-        saloonHeaderBar.setPosition(360, 1150);
-        saloonHeaderBar.addComponent(UITransform).setContentSize(696, 52);
-        WestStyle.drawGrandSaloonPanel(saloonHeaderBar, 696, 52, 10, WestColors.WOOD_DARK, WestColors.BRASS_FRAME);
+        saloonHeaderBar.setPosition(360, 1156);
+        saloonHeaderBar.addComponent(UITransform).setContentSize(696, 44);
+        WestStyle.drawGrandSaloonPanel(saloonHeaderBar, 696, 44, 10, WestColors.WOOD_DARK, WestColors.BRASS_FRAME);
 
         // 🏠 顶部快捷返回主城木质吊牌
         this.saloonButton(
@@ -4098,10 +4887,10 @@ export class GameApp extends Component {
             -295,
             0,
             96,
-            42,
+            36,
             () => { void this.show("lobby"); },
             true,
-            14,
+            13,
         );
 
         const weatherText = this.getWeatherText(this.round.weather);
@@ -4111,22 +4900,22 @@ export class GameApp extends Component {
             saloonHeaderBar,
             `${statePrefix}${this.stateText(this.round.state)} | 🏜️ ${weatherText}`,
             -145,
-            7,
-            13,
+            6,
+            12,
             WestColors.GOLD_BRIGHT,
         );
         this.text(
             saloonHeaderBar,
             `🚩 ${trackText} · 第${this.round.roundNo.slice(-4)}期`,
             -145,
-            -11,
-            11,
+            -10,
+            10,
             WestColors.TEXT_MUTED,
         );
-        const countdownLabel = this.text(saloonHeaderBar, "", -22, 7, 15, WestColors.BANDANA_RED);
+        const countdownLabel = this.text(saloonHeaderBar, "", -22, 6, 14, WestColors.BANDANA_RED);
 
         // 走势徽章：右半侧 + 📊 走势路单抽屉入口
-        this.text(saloonHeaderBar, `📜 走势:`, 68, 0, 13, WestColors.GOLD_BRIGHT);
+        this.text(saloonHeaderBar, `📜 走势:`, 68, 0, 12, WestColors.GOLD_BRIGHT);
         const chipColors = [
             new Color(217, 83, 79, 255),  // 1: 烈焰红
             new Color(51, 122, 183, 255), // 2: 极速蓝
@@ -4136,16 +4925,16 @@ export class GameApp extends Component {
             new Color(218, 165, 32, 255), // 6: 皇家金
         ];
         const chipsX = [108, 135, 162, 189];
-        this.recentWinners.slice(0, 4).forEach((winnerNo, idx) => {
-            const chip = this.box(saloonHeaderBar, chipsX[idx], 0, 22, 22, chipColors[(winnerNo - 1) % 6], 11);
+        (this.recentWinners ?? []).slice(0, 4).forEach((winnerNo, idx) => {
+            const chip = this.box(saloonHeaderBar, chipsX[idx], 0, 20, 20, chipColors[(winnerNo - 1) % 6], 10);
             const g = chip.getComponent(Graphics);
             if (g) {
                 g.strokeColor = WestColors.BRASS_FRAME;
-                g.lineWidth = 1.2;
-                g.circle(0, 0, 11);
+                g.lineWidth = 1.0;
+                g.circle(0, 0, 10);
                 g.stroke();
             }
-            this.text(chip, `${winnerNo}`, 0, 0, 12, new Color(255, 255, 255, 255));
+            this.text(chip, `${winnerNo}`, 0, 0, 11, new Color(255, 255, 255, 255));
             this.bindClick(chip, () => { void this.buildTrendBeadPlateModal(root); });
         });
 
@@ -4156,22 +4945,60 @@ export class GameApp extends Component {
             265,
             0,
             74,
-            38,
+            32,
             () => { void this.buildTrendBeadPlateModal(root); },
             true,
-            13,
+            12,
         );
 
         if (this.round.state === RaceState.Cancelled) {
-            const cancelBox = this.woodBox(root, 360, 1102, 696, 32, 6, WestColors.BANDANA_RED, WestColors.GOLD_METALLIC);
-            this.text(cancelBox, `⚠️ ${I18n.t("race.cancelledNotice")}`, 0, 0, 14, WestColors.PARCHMENT_LIGHT);
+            const cancelBox = this.woodBox(root, 360, 1114, 696, 28, 6, WestColors.BANDANA_RED, WestColors.GOLD_METALLIC);
+            this.text(cancelBox, `⚠️ ${I18n.t("race.cancelledNotice")}`, 0, 0, 13, WestColors.PARCHMENT_LIGHT);
         } else {
-            FairnessHelper.renderCommitmentBadge(
-                root,
-                195,
-                1102,
-                this.round.resultSeedCommitment ?? "",
-                this.round.resultSeed,
+            // 2.1 四大专属独立导航徽章条 (晨报速览、超级累积奖池、链上公证核验、分红派彩规则)，严格排布绝无重叠
+            const toolsBar = new Node("RaceToolsSubBar");
+            toolsBar.layer = root.layer || Layers.Enum.UI_2D;
+            root.addChild(toolsBar);
+            toolsBar.setPosition(360, 1114);
+            toolsBar.addComponent(UITransform).setContentSize(696, 28);
+
+            // 1. 赛前晨报
+            this.saloonButton(
+                toolsBar,
+                "📰 赛前晨报",
+                -250,
+                0,
+                158,
+                26,
+                () => { this.showMorningChronicleModal(root); },
+                false,
+                12,
+            );
+
+            // 2. 超级累积大奖池
+            const dropText = this.round.jackpotDropped
+                ? `🎉 巨奖! $${this.round.jackpotDropAmount}`
+                : `💎 累积巨奖池`;
+            this.saloonButton(
+                toolsBar,
+                dropText,
+                -83,
+                0,
+                158,
+                26,
+                () => { this.showJackpotModal(root); },
+                false,
+                12,
+            );
+
+            // 3. 链上公证哈希
+            this.saloonButton(
+                toolsBar,
+                "🛡️ 公证哈希",
+                83,
+                0,
+                158,
+                26,
                 () => {
                     void FairnessHelper.showFairnessModal(
                         root,
@@ -4180,93 +5007,97 @@ export class GameApp extends Component {
                         this.round?.roundNo,
                     );
                 },
+                false,
+                12,
             );
 
+            // 4. 分红派彩规则
             const poolAmount = this.round.payoutPoolAmount ?? 100000;
             const dilutionFactor = this.round.dilutionFactor ?? 1.0;
-            PariMutuelHelper.renderPoolBadge(
-                root,
-                525,
-                1102,
-                poolAmount,
-                dilutionFactor,
+            this.saloonButton(
+                toolsBar,
+                "⚖️ 派彩分红",
+                250,
+                0,
+                158,
+                26,
                 () => {
                     PariMutuelHelper.showRulesModal(root, poolAmount, dilutionFactor);
                 },
+                false,
+                12,
             );
-
-            // 📰 老牛仔赛前晨报速览 (Morning Chronicle & Paddock Walk)
-            const morningBox = this.woodBox(root, 195, 1102, 140, 26, 6, WestColors.WOOD_DARK, WestColors.BRASS_FRAME);
-            this.text(morningBox, "📰 赛前晨报速览", 0, 0, 12, WestColors.GOLD_BRIGHT);
-            this.bindClick(morningBox, () => {
-                this.showMorningChronicleModal(root);
-            });
-
-            // 💎 超级累积大奖池 (Mega Jackpot) 徽章
-            const jackpotBox = this.woodBox(root, 360, 1102, 140, 26, 6, WestColors.WOOD_DARK, WestColors.GOLD_METALLIC);
-            const dropText = this.round.jackpotDropped
-                ? `🎉 巨奖掉落! $${this.round.jackpotDropAmount}`
-                : `💎 累积巨奖池`;
-            this.text(jackpotBox, dropText, 0, 0, 12, WestColors.GOLD_BRIGHT);
-            this.bindClick(jackpotBox, () => {
-                this.showJackpotModal(root);
-            });
         }
 
         // 3. 赛马泥道竞技场（六马动态泥道与策马冲刺区）
         this.buildTrack(root);
 
-        // 比赛中微操互动：看台呐喊与强力挥鞭轻交互 (PRD 2.2 / 3.3 节局内沉浸互动)
+        // 比赛中微操互动：看台呐喊与强力挥鞭轻交互 (置于 730px 黄金隔离区，不遮挡跑道第6道也不遮挡下注台)
         const inPlayCheerBar = new Node("InPlayInteractiveBar");
         inPlayCheerBar.layer = root.layer || Layers.Enum.UI_2D;
         root.addChild(inPlayCheerBar);
-        inPlayCheerBar.setPosition(360, 710);
-        inPlayCheerBar.addComponent(UITransform).setContentSize(600, 48);
+        inPlayCheerBar.setPosition(360, 730);
+        inPlayCheerBar.addComponent(UITransform).setContentSize(600, 30);
+
+        const cheerQuotes = [
+            "📣 你在看台起立振臂疾呼：“好马快冲！！稳稳超过去！！” 全场呐喊欢腾！",
+            "📣 你高举手中的加油旗高喊：“咬住第一！弯道内侧加速！！” 看台气氛瞬间点燃！",
+            "📣 你挥舞牛仔帽大喝：“就是这个节奏！冲刺啊！！” 领跑马匹士气大振！",
+            "📣 看台万众齐呼：“加油！加油！！一鼓作气夺冠！！” 欢声雷动！",
+        ];
+        const whipQuotes = [
+            "⚡ 策马挥鞭！赛马昂首奋蹄，马蹄飞溅泥沙，绝地反击！",
+            "⚡ 战鞭如电！骑师伏鞍蓄力，爱驹爆发极限潜能直扑终点！",
+            "⚡ 扬鞭奋蹄！两道风驰电掣，瞬间拉开身后追兵半个身位！",
+            "⚡ 凌空一鞭！赛马如同离弦之箭，风驰电掣冲向最后百米！",
+        ];
 
         this.saloonButton(
             inPlayCheerBar,
-            "📣 看台呐喊助威!",
+            "📣 看台助威 (全场欢腾)",
             -160,
             0,
-            180,
-            42,
+            200,
+            30,
             () => {
                 WestAudio.playYeeHaw("COMMON");
                 WestAudio.speakCowboy("spurs", this.getAudioMode());
                 this.shakeScreen(150, 4);
-                this.updateRaceMessage("📣 你在看台奋力呐喊：好马快冲！！全场欢腾！");
+                const rndQuote = cheerQuotes[Math.floor(Math.random() * cheerQuotes.length)];
+                this.updateRaceMessage(rndQuote);
             },
             true,
-            14,
+            12,
         );
 
         this.saloonButton(
             inPlayCheerBar,
-            "⚡ 扬鞭奋蹄加速!",
+            "⚡ 策马扬鞭 (极速超车)",
             160,
             0,
-            180,
-            42,
+            200,
+            30,
             () => {
                 WestAudio.playBullwhip("COMMON");
                 WestAudio.playHorseNeigh("COMMON");
                 this.shakeScreen(180, 5);
-                this.updateRaceMessage("⚡ 策马挥鞭！赛马昂首奋蹄，马蹄飞溅沙石！");
+                const rndWhip = whipQuotes[Math.floor(Math.random() * whipQuotes.length)];
+                this.updateRaceMessage(rndWhip);
             },
             true,
-            14,
+            12,
         );
         inPlayCheerBar.active = this.round.state === RaceState.Racing;
 
-        // 🔥 比赛进行中 (15s) 绝地追投加倍浮动悬浮按钮
+        // 🔥 比赛进行中 (15s) 绝地追投加倍浮动悬浮按钮 (置于 730px 黄金隔离区，绝不遮挡模式切换栏)
         const ddNode = new Node("InPlayDoubleDownBtn");
         ddNode.layer = root.layer || Layers.Enum.UI_2D;
         root.addChild(ddNode);
-        ddNode.setPosition(360, 710);
-        ddNode.addComponent(UITransform).setContentSize(260, 50);
-        WestStyle.drawGrandSaloonPanel(ddNode, 260, 50, 12, WestColors.BANDANA_RED, WestColors.GOLD_METALLIC);
+        ddNode.setPosition(360, 730);
+        ddNode.addComponent(UITransform).setContentSize(260, 32);
+        WestStyle.drawGrandSaloonPanel(ddNode, 260, 32, 8, WestColors.BANDANA_RED, WestColors.GOLD_METALLIC);
         const isEnRace = I18n.getLocale() === "en-US";
-        this.text(ddNode, I18n.t("race.doubleDownBtn", "🔥 追投加倍 (限时 3s)"), 0, 0, isEnRace ? 13 : 15, WestColors.GOLD_BRIGHT);
+        this.text(ddNode, I18n.t("race.doubleDownBtn", "🔥 追投加倍 (限时 3s)"), 0, 0, isEnRace ? 12 : 14, WestColors.GOLD_BRIGHT);
         this.bindClick(ddNode, () => {
             void this.onDoubleDownClicked();
         });
@@ -4274,15 +5105,16 @@ export class GameApp extends Component {
         this.doubleDownBtnNode = ddNode;
 
         // 4. 西部沙龙下注总控台（Grand Saloon Betting Parlor）
+        // 按照黄金分割率适配：总高 600px，居中 Y=415，与上方跑道竞技场无缝衔接且绝不压盖跑道
         const deskBox = new Node("SaloonBettingDesk");
         deskBox.layer = root.layer || Layers.Enum.UI_2D;
         root.addChild(deskBox);
-        deskBox.setPosition(360, 445);
-        deskBox.addComponent(UITransform).setContentSize(696, 650);
-        WestStyle.drawGrandSaloonPanel(deskBox, 696, 650, 14, WestColors.WOOD_DARK, WestColors.WOOD_FRAME);
+        deskBox.setPosition(360, 415);
+        deskBox.addComponent(UITransform).setContentSize(696, 600);
+        WestStyle.drawGrandSaloonPanel(deskBox, 696, 600, 14, WestColors.WOOD_DARK, WestColors.WOOD_FRAME);
 
         // (0) 玩法模式切换标签栏：【独赢 WIN】、【位置 PLACE】、【连赢 QUINELLA】、【二连单 EXACTA】、【三重彩 TRIFECTA】+【📜 玩法规则】
-        const modeTabBar = this.box(deskBox, 0, 300, 670, 38, WestColors.WOOD_DARK, 6);
+        const modeTabBar = this.box(deskBox, 0, 270, 670, 36, WestColors.WOOD_DARK, 6);
         const tabsData: Array<{ mode: "WIN" | "PLACE" | "QUINELLA" | "EXACTA" | "TRIFECTA"; label: string; x: number }> = [
             { mode: "WIN", label: I18n.t("race.modeWinTab", "🏇 独赢"), x: -265 },
             { mode: "PLACE", label: I18n.t("race.modePlaceTab", "🛡️ 位置"), x: -165 },
@@ -4297,7 +5129,7 @@ export class GameApp extends Component {
             tNode.layer = deskBox.layer || Layers.Enum.UI_2D;
             modeTabBar.addChild(tNode);
             tNode.setPosition(t.x, 0);
-            tNode.addComponent(UITransform).setContentSize(96, 32);
+            tNode.addComponent(UITransform).setContentSize(92, 32);
             const lbl = this.text(tNode, t.label, 0, 0, isEnRace ? 11 : 13, this.betMode === t.mode ? WestColors.GOLD_BRIGHT : WestColors.TEXT_PARCHMENT);
             tabNodes.push({ mode: t.mode, node: tNode, labelNode: lbl });
 
@@ -4330,11 +5162,11 @@ export class GameApp extends Component {
             this.showModeRulesModal(this.betMode);
         });
 
-        // (1) 倍数快捷选择栏（x1, x2, x5, x10, MAX，皮鞍古铜排扣）
-        const multBar = this.box(deskBox, 0, 255, 670, 36, WestColors.WOOD_DARK, 8);
-        this.text(multBar, I18n.t("race.multLabel", "⚡ 倍数"), -245, 0, isEnRace ? 13 : 15, WestColors.TEXT_PARCHMENT);
+        // (1) 倍数与机选/梭哈/清空快捷选择栏（国人下注三大核心功能：智能机选、一键梭哈、清空重选）
+        const multBar = this.box(deskBox, 0, 228, 670, 32, WestColors.WOOD_DARK, 8);
+        this.text(multBar, isEnRace ? "⚡ MULT" : "⚡ 快捷", -280, 0, isEnRace ? 12 : 13, WestColors.TEXT_PARCHMENT);
         const mults = [1, 2, 5, 10];
-        const multX = [-140, -50, 40, 130];
+        const multX = [-215, -155, -95, -35];
         const multNodes: Array<{ node: Node; m: number }> = [];
 
         mults.forEach((m, idx) => {
@@ -4344,8 +5176,8 @@ export class GameApp extends Component {
                 `x${m}`,
                 multX[idx],
                 0,
-                76,
-                28,
+                52,
+                26,
                 () => {
                     WestAudio.playSpurJingle();
                     this.betMultiplier = m;
@@ -4354,29 +5186,100 @@ export class GameApp extends Component {
                 },
                 isCurrent ? WestColors.BANDANA_RED : WestColors.LEATHER_SADDLE,
                 isCurrent ? WestColors.GOLD_BRIGHT : WestColors.PARCHMENT_LIGHT,
-                15,
+                13,
             );
             multNodes.push({ node: btnNode, m });
         });
 
-        // MAX 倍率按钮（警长红底金印）
+        // 🎲 智能机选按钮（金质警长徽记，针对 5 大玩法智能随机生成推荐组合）
+        this.saloonButton(
+            multBar,
+            isEnRace ? "🎲 Quick Pick" : "🎲 智能机选",
+            48,
+            0,
+            96,
+            26,
+            () => {
+                if (this.round?.state !== RaceState.Betting) {
+                    this.showToast(I18n.t("race.betClosedNotice", "当前非投注时段"), WestColors.BANDANA_RED);
+                    return;
+                }
+                WestAudio.playChipClink();
+                WestAudio.playSpurJingle();
+                if (this.betMode === "WIN" || this.betMode === "PLACE") {
+                    const rnd = Math.floor(Math.random() * 6) + 1;
+                    this.selectedHorse = rnd;
+                    const hData = this.round?.horses.find((h) => h.horseNo === rnd);
+                    const hName = hData?.horseNameZhSnapshot || `${rnd}号`;
+                    this.showToast(`🎲 智能机选已为您锁定: ${rnd}号 [${hName}]！`, WestColors.GOLD_BRIGHT);
+                } else if (this.betMode === "QUINELLA") {
+                    const h1 = Math.floor(Math.random() * 5) + 1;
+                    const h2 = Math.floor(Math.random() * (6 - h1)) + h1 + 1;
+                    this.selectedQuinellaCombo = `${h1}-${h2}`;
+                    this.showToast(`🎲 智能机选已选连赢: [${h1}-${h2}]！`, WestColors.GOLD_BRIGHT);
+                } else if (this.betMode === "EXACTA") {
+                    const pool = [1, 2, 3, 4, 5, 6].sort(() => Math.random() - 0.5);
+                    this.exactaFirstHorse = pool[0];
+                    this.exactaSecondHorse = pool[1];
+                    this.showToast(`🎲 智能机选二连单: 1st:${pool[0]}号 ➔ 2nd:${pool[1]}号！`, WestColors.GOLD_BRIGHT);
+                } else if (this.betMode === "TRIFECTA") {
+                    const pool = [1, 2, 3, 4, 5, 6].sort(() => Math.random() - 0.5);
+                    this.trifectaFirstHorse = pool[0];
+                    this.trifectaSecondHorse = pool[1];
+                    this.trifectaThirdHorse = pool[2];
+                    this.showToast(`🎲 智能机选三重彩: 1st:${pool[0]} ➔ 2nd:${pool[1]} ➔ 3rd:${pool[2]}！`, WestColors.GOLD_BRIGHT);
+                }
+                updateRaceUI();
+            },
+            true,
+            12,
+        );
+
+        // 🔥 梭哈 / 全部 (MAX) 按钮（警长红底金印）
         this.button(
             multBar,
-            "MAX",
-            215,
+            isEnRace ? "MAX" : "🔥 梭哈",
+            156,
             0,
-            76,
-            28,
+            86,
+            26,
             () => {
                 WestAudio.playSpurJingle();
                 const bal = this.player?.balance ?? 100;
-                this.betMultiplier = Math.max(1, Math.floor(bal / this.selectedChip));
-                this.amount = Math.max(this.selectedChip, Math.floor(bal));
+                const maxBetLimit = this.raceRules?.maximumBetAmount ?? 10000;
+                const effectiveMax = Math.min(maxBetLimit, Math.floor(bal));
+                this.betMultiplier = Math.max(1, Math.floor(effectiveMax / this.selectedChip));
+                this.amount = Math.max(this.selectedChip, effectiveMax);
+                this.showToast(`🔥 已将下注额设为可用上限: ${this.amount} 金币！`, WestColors.GOLD_BRIGHT);
                 updateRaceUI();
             },
             WestColors.BANDANA_RED,
             WestColors.GOLD_BRIGHT,
-            14,
+            13,
+        );
+
+        // 🗑️ 清空重选按钮
+        this.saloonButton(
+            multBar,
+            isEnRace ? "Clear" : "🗑️ 清空",
+            248,
+            0,
+            72,
+            26,
+            () => {
+                this.selectedHorse = 0;
+                this.selectedQuinellaCombo = null;
+                this.exactaFirstHorse = 0;
+                this.exactaSecondHorse = 0;
+                this.trifectaFirstHorse = 0;
+                this.trifectaSecondHorse = 0;
+                this.trifectaThirdHorse = 0;
+                WestAudio.playParchmentFlip();
+                this.showToast("已清空当前选号", WestColors.TEXT_PARCHMENT);
+                updateRaceUI();
+            },
+            false,
+            12,
         );
 
         // (2A) 单马独赢模式容器 (WIN)
@@ -4386,7 +5289,7 @@ export class GameApp extends Component {
         winContainer.setPosition(0, 0);
 
         const gridX = [-162, 162];
-        const gridY = [182, 118, 54];
+        const gridY = [146, 88, 30];
         const horseCards: Array<{
             cardNode: Node;
             horseNo: number;
@@ -4397,8 +5300,8 @@ export class GameApp extends Component {
             favorTag: string;
         }> = [];
         // 独赢规则入口与名驹三视图图鉴入口
-        this.saloonButton(winContainer, isEnRace ? "📜 Win Rules" : "📜 独赢规则说明", 235, 222, 120, 26, () => this.showModeRulesModal("WIN"), false, 12);
-        this.saloonButton(winContainer, isEnRace ? "🏛️ Horse Gallery" : "🏛️ 12名驹三视图图鉴", 75, 222, 160, 26, () => HorseGalleryModal.show(this.selectedHorse || 1, this.node), false, 12);
+        this.saloonButton(winContainer, isEnRace ? "📜 Win Rules" : "📜 独赢规则说明", 235, 192, 120, 24, () => this.showModeRulesModal("WIN"), false, 11);
+        this.saloonButton(winContainer, isEnRace ? "🏛️ Horse Gallery" : "🏛️ 20名驹全景图鉴", 75, 192, 160, 24, () => HorseGalleryModal.show(this.selectedHorse || 1, this.node), false, 11);
 
         this.getModeHorses("WIN").forEach((horse, index) => {
             const col = index % 2;
@@ -4441,11 +5344,10 @@ export class GameApp extends Component {
             // 点击三视图与油画展示小按钮（阻止冒泡，避免误触发下注选中）
             const galleryIconBtn = this.box(cardNode, 140, 0, 28, 28, WestColors.WOOD_DARK, 6);
             this.text(galleryIconBtn, "🎨", 0, 0, 13);
+            galleryIconBtn.on(Node.EventType.TOUCH_START, (e: EventTouch) => { e.propagationStopped = true; });
+            galleryIconBtn.on(Node.EventType.TOUCH_END, (e: EventTouch) => { e.propagationStopped = true; });
             const gBtn = galleryIconBtn.addComponent(Button);
-            gBtn.node.on(Button.EventType.CLICK, (event: { propagationStopped?: boolean }) => {
-                if (event) {
-                    event.propagationStopped = true;
-                }
+            gBtn.node.on(Button.EventType.CLICK, () => {
                 HorseGalleryModal.show(horse.horseNo, this.node);
             }, this);
 
@@ -4491,7 +5393,7 @@ export class GameApp extends Component {
         deskBox.addChild(quinellaContainer);
         quinellaContainer.setPosition(0, 0);
 
-        this.saloonButton(quinellaContainer, isEnRace ? "📜 Quinella Rules" : "📜 连赢玩法规则", 248, 232, 120, 24, () => this.showModeRulesModal("QUINELLA"), false, 11);
+        this.saloonButton(quinellaContainer, isEnRace ? "📜 Quinella Rules" : "📜 连赢玩法规则", 248, 192, 120, 24, () => this.showModeRulesModal("QUINELLA"), false, 11);
 
         const horseColors = [
             new Color(217, 83, 79, 255),  // 1: 烈焰红
@@ -4521,17 +5423,17 @@ export class GameApp extends Component {
         const colHorseList = [6, 5, 4, 3, 2];
         const rowHorseList = [1, 2, 3, 4, 5];
         const colXs = [-204, -91, 22, 135, 248];
-        const rowYs = [170, 135, 100, 65, 30];
+        const rowYs = [142, 114, 86, 58, 30];
 
         // 绘制列头指示标签 (Top Headers: 6, 5, 4, 3, 2)
         colHorseList.forEach((cHorse, j) => {
-            const colHeader = this.box(quinellaContainer, colXs[j], 205, 108, 20, horseColors[cHorse - 1], 4);
+            const colHeader = this.box(quinellaContainer, colXs[j], 172, 108, 20, horseColors[cHorse - 1], 4);
             this.text(colHeader, `马号 [${cHorse}]`, 0, 0, 12, new Color(255, 255, 255, 255));
         });
 
         // 绘制行头指示标签 (Left Headers: 1, 2, 3, 4, 5)
         rowHorseList.forEach((rHorse, i) => {
-            const rowHeader = this.box(quinellaContainer, -282, rowYs[i], 36, 30, horseColors[rHorse - 1], 4);
+            const rowHeader = this.box(quinellaContainer, -282, rowYs[i], 36, 26, horseColors[rHorse - 1], 4);
             this.text(rowHeader, `${rHorse}`, 0, 0, 14, new Color(255, 255, 255, 255));
         });
 
@@ -4559,14 +5461,14 @@ export class GameApp extends Component {
                 cellNode.layer = quinellaContainer.layer || Layers.Enum.UI_2D;
                 quinellaContainer.addChild(cellNode);
                 cellNode.setPosition(colXs[j], rowYs[i]);
-                cellNode.addComponent(UITransform).setContentSize(108, 31);
+                cellNode.addComponent(UITransform).setContentSize(108, 26);
 
                 const isSelected = this.selectedQuinellaCombo === combo;
                 const isWinner = this.round?.quinellaCombination === combo;
-                WestStyle.drawQuinellaCell(cellNode, 108, 31, isSelected, isWinner, minH, maxH);
+                WestStyle.drawQuinellaCell(cellNode, 108, 26, isSelected, isWinner, minH, maxH);
 
-                const comboLabel = this.text(cellNode, combo, 0, 5, 13, isSelected ? WestColors.GOLD_BRIGHT : WestColors.TEXT_PARCHMENT);
-                const oddsLabel = this.text(cellNode, `x${odds.toFixed(1)}`, 0, -8, 12, isSelected ? WestColors.TEXT_CHALK : WestColors.GOLD_METALLIC);
+                const comboLabel = this.text(cellNode, combo, 0, 4, 12, isSelected ? WestColors.GOLD_BRIGHT : WestColors.TEXT_PARCHMENT);
+                const oddsLabel = this.text(cellNode, `x${odds.toFixed(1)}`, 0, -7, 11, isSelected ? WestColors.TEXT_CHALK : WestColors.GOLD_METALLIC);
 
                 quinellaCells.push({
                     node: cellNode,
@@ -4601,7 +5503,7 @@ export class GameApp extends Component {
         deskBox.addChild(placeContainer);
         placeContainer.setPosition(0, 0);
 
-        this.saloonButton(placeContainer, isEnRace ? "📜 Place Rules" : "📜 位置规则说明", 235, 222, 120, 26, () => this.showModeRulesModal("PLACE"), false, 12);
+        this.saloonButton(placeContainer, isEnRace ? "📜 Place Rules" : "📜 位置规则说明", 235, 192, 120, 24, () => this.showModeRulesModal("PLACE"), false, 11);
 
         const placeCards: Array<{
             cardNode: Node;
@@ -4680,16 +5582,16 @@ export class GameApp extends Component {
         deskBox.addChild(exactaContainer);
         exactaContainer.setPosition(0, 0);
 
-        this.saloonButton(exactaContainer, isEnRace ? "📜 Exacta Rules" : "📜 二连单规则", 235, 235, 120, 26, () => this.showModeRulesModal("EXACTA"), false, 12);
+        this.saloonButton(exactaContainer, isEnRace ? "📜 Exacta Rules" : "📜 二连单规则", 235, 192, 120, 24, () => this.showModeRulesModal("EXACTA"), false, 11);
 
-        this.text(exactaContainer, I18n.t("race.exacta1st", "🥇 选定第 1 名 (冠军)："), isEnRace ? -235 : -220, 195, isEnRace ? 12 : 14, WestColors.GOLD_BRIGHT);
+        this.text(exactaContainer, I18n.t("race.exacta1st", "🥇 选定第 1 名 (冠军)："), isEnRace ? -235 : -220, 166, isEnRace ? 12 : 14, WestColors.GOLD_BRIGHT);
         const exacta1stNodes: Array<{ node: Node; horseNo: number; label: Label }> = [];
         const exactaBtnXs = [-120, -50, 20, 90, 160, 230];
         const exactaHorses = this.getModeHorses("EXACTA");
         const exactaHorseNos = exactaHorses.length === 6 ? exactaHorses.map((h) => h.horseNo) : [1, 2, 3, 4, 5, 6];
 
         exactaHorseNos.forEach((hNo, idx) => {
-            const btn = this.woodBox(exactaContainer, exactaBtnXs[idx], 195, 52, 32, 6, WestColors.WOOD_DARK, WestColors.BRASS_FRAME);
+            const btn = this.woodBox(exactaContainer, exactaBtnXs[idx], 166, 58, 34, 6, WestColors.WOOD_DARK, WestColors.BRASS_FRAME);
             const lbl = this.text(btn, isEnRace ? `No.${hNo}` : `${hNo}号`, 0, 0, isEnRace ? 12 : 13, WestColors.TEXT_PARCHMENT);
             exacta1stNodes.push({ node: btn, horseNo: hNo, label: lbl });
             this.bindClick(btn, () => {
@@ -4705,10 +5607,10 @@ export class GameApp extends Component {
             });
         });
 
-        this.text(exactaContainer, I18n.t("race.exacta2nd", "🥈 选定第 2 名 (亚军)："), isEnRace ? -235 : -220, 135, isEnRace ? 12 : 14, WestColors.PARCHMENT_LIGHT);
+        this.text(exactaContainer, I18n.t("race.exacta2nd", "🥈 选定第 2 名 (亚军)："), isEnRace ? -235 : -220, 116, isEnRace ? 12 : 14, WestColors.PARCHMENT_LIGHT);
         const exacta2ndNodes: Array<{ node: Node; horseNo: number; label: Label }> = [];
         exactaHorseNos.forEach((hNo, idx) => {
-            const btn = this.woodBox(exactaContainer, exactaBtnXs[idx], 135, 52, 32, 6, WestColors.WOOD_DARK, WestColors.BRASS_FRAME);
+            const btn = this.woodBox(exactaContainer, exactaBtnXs[idx], 116, 58, 34, 6, WestColors.WOOD_DARK, WestColors.BRASS_FRAME);
             const lbl = this.text(btn, isEnRace ? `No.${hNo}` : `${hNo}号`, 0, 0, isEnRace ? 12 : 13, WestColors.TEXT_PARCHMENT);
             exacta2ndNodes.push({ node: btn, horseNo: hNo, label: lbl });
             this.bindClick(btn, () => {
@@ -4724,8 +5626,8 @@ export class GameApp extends Component {
             });
         });
 
-        const exactaOddsBadge = this.box(exactaContainer, 0, 65, 630, 36, WestColors.WOOD_DARK, 6);
-        const exactaOddsLabel = this.text(exactaOddsBadge, isEnRace ? "🎯 Pick 1st and 2nd place horses in exact order" : "🎯 请分别指定冠军(1st)与亚军(2nd)马号", 0, 0, isEnRace ? 12 : 14, WestColors.GOLD_BRIGHT);
+        const exactaOddsBadge = this.box(exactaContainer, 0, 60, 630, 32, WestColors.WOOD_DARK, 6);
+        const exactaOddsLabel = this.text(exactaOddsBadge, isEnRace ? "🎯 Pick 1st and 2nd place horses in exact order" : "🎯 请分别指定冠军(1st)与亚军(2nd)马号", 0, 0, isEnRace ? 12 : 13, WestColors.GOLD_BRIGHT);
 
         // (2D) 三重彩模式容器 (TRIFECTA 严格按次序命中第1、第2、第3名，千倍梦想大奖)
         const trifectaContainer = new Node("TrifectaContainer");
@@ -4733,16 +5635,16 @@ export class GameApp extends Component {
         deskBox.addChild(trifectaContainer);
         trifectaContainer.setPosition(0, 0);
 
-        this.saloonButton(trifectaContainer, isEnRace ? "📜 Trifecta Rules" : "📜 三重彩规则", 235, 240, 120, 26, () => this.showModeRulesModal("TRIFECTA"), false, 12);
+        this.saloonButton(trifectaContainer, isEnRace ? "📜 Trifecta Rules" : "📜 三重彩规则", 235, 194, 120, 24, () => this.showModeRulesModal("TRIFECTA"), false, 11);
 
-        this.text(trifectaContainer, I18n.t("race.trifecta1st", "🥇 选定第 1 名 (冠军)："), isEnRace ? -235 : -220, 205, isEnRace ? 12 : 13, WestColors.GOLD_BRIGHT);
+        this.text(trifectaContainer, I18n.t("race.trifecta1st", "🥇 选定第 1 名 (冠军)："), isEnRace ? -235 : -220, 168, isEnRace ? 12 : 13, WestColors.GOLD_BRIGHT);
         const trifecta1stNodes: Array<{ node: Node; horseNo: number; label: Label }> = [];
         const trifectaBtnXs = [-120, -50, 20, 90, 160, 230];
         const trifectaHorses = this.getModeHorses("TRIFECTA");
         const trifectaHorseNos = trifectaHorses.length === 6 ? trifectaHorses.map((h) => h.horseNo) : [1, 2, 3, 4, 5, 6];
 
         trifectaHorseNos.forEach((hNo, idx) => {
-            const btn = this.woodBox(trifectaContainer, trifectaBtnXs[idx], 205, 52, 28, 6, WestColors.WOOD_DARK, WestColors.BRASS_FRAME);
+            const btn = this.woodBox(trifectaContainer, trifectaBtnXs[idx], 168, 58, 32, 6, WestColors.WOOD_DARK, WestColors.BRASS_FRAME);
             const lbl = this.text(btn, isEnRace ? `No.${hNo}` : `${hNo}号`, 0, 0, isEnRace ? 11 : 12, WestColors.TEXT_PARCHMENT);
             trifecta1stNodes.push({ node: btn, horseNo: hNo, label: lbl });
             this.bindClick(btn, () => {
@@ -4759,10 +5661,10 @@ export class GameApp extends Component {
             });
         });
 
-        this.text(trifectaContainer, I18n.t("race.trifecta2nd", "🥈 选定第 2 名 (亚军)："), isEnRace ? -235 : -220, 155, isEnRace ? 12 : 13, WestColors.PARCHMENT_LIGHT);
+        this.text(trifectaContainer, I18n.t("race.trifecta2nd", "🥈 选定第 2 名 (亚军)："), isEnRace ? -235 : -220, 124, isEnRace ? 12 : 13, WestColors.PARCHMENT_LIGHT);
         const trifecta2ndNodes: Array<{ node: Node; horseNo: number; label: Label }> = [];
         trifectaHorseNos.forEach((hNo, idx) => {
-            const btn = this.woodBox(trifectaContainer, trifectaBtnXs[idx], 155, 52, 28, 6, WestColors.WOOD_DARK, WestColors.BRASS_FRAME);
+            const btn = this.woodBox(trifectaContainer, trifectaBtnXs[idx], 124, 58, 32, 6, WestColors.WOOD_DARK, WestColors.BRASS_FRAME);
             const lbl = this.text(btn, isEnRace ? `No.${hNo}` : `${hNo}号`, 0, 0, isEnRace ? 11 : 12, WestColors.TEXT_PARCHMENT);
             trifecta2ndNodes.push({ node: btn, horseNo: hNo, label: lbl });
             this.bindClick(btn, () => {
@@ -4779,10 +5681,10 @@ export class GameApp extends Component {
             });
         });
 
-        this.text(trifectaContainer, I18n.t("race.trifecta3rd", "🥉 选定第 3 名 (季军)："), isEnRace ? -235 : -220, 105, isEnRace ? 12 : 13, WestColors.BRASS_FRAME);
+        this.text(trifectaContainer, I18n.t("race.trifecta3rd", "🥉 选定第 3 名 (季军)："), isEnRace ? -235 : -220, 80, isEnRace ? 12 : 13, WestColors.BRASS_FRAME);
         const trifecta3rdNodes: Array<{ node: Node; horseNo: number; label: Label }> = [];
         trifectaHorseNos.forEach((hNo, idx) => {
-            const btn = this.woodBox(trifectaContainer, trifectaBtnXs[idx], 105, 52, 28, 6, WestColors.WOOD_DARK, WestColors.BRASS_FRAME);
+            const btn = this.woodBox(trifectaContainer, trifectaBtnXs[idx], 80, 58, 32, 6, WestColors.WOOD_DARK, WestColors.BRASS_FRAME);
             const lbl = this.text(btn, isEnRace ? `No.${hNo}` : `${hNo}号`, 0, 0, isEnRace ? 11 : 12, WestColors.TEXT_PARCHMENT);
             trifecta3rdNodes.push({ node: btn, horseNo: hNo, label: lbl });
             this.bindClick(btn, () => {
@@ -4799,16 +5701,16 @@ export class GameApp extends Component {
             });
         });
 
-        const trifectaOddsBadge = this.box(trifectaContainer, 0, 52, 630, 32, WestColors.WOOD_DARK, 6);
+        const trifectaOddsBadge = this.box(trifectaContainer, 0, 36, 630, 30, WestColors.WOOD_DARK, 6);
         const trifectaOddsLabel = this.text(trifectaOddsBadge, isEnRace ? "👑 Pick distinct 1st, 2nd & 3rd horses · Win up to 2000x!" : "👑 请依次选定冠(1st)、亚(2nd)、季(3rd)军组合 · 冲击千倍梦想彩池！", 0, 0, isEnRace ? 12 : 13, WestColors.GOLD_BRIGHT);
 
         // (3) 实时毛奖/阶梯手续费/净奖预估牛皮纸账单
         const previewBox = new Node("PreviewReceipt");
         previewBox.layer = deskBox.layer || Layers.Enum.UI_2D;
         deskBox.addChild(previewBox);
-        previewBox.setPosition(0, -10);
-        previewBox.addComponent(UITransform).setContentSize(670, 38);
-        WestStyle.drawWantedPosterCard(previewBox, 670, 38, 6);
+        previewBox.setPosition(0, -8);
+        previewBox.addComponent(UITransform).setContentSize(670, 34);
+        WestStyle.drawWantedPosterCard(previewBox, 670, 34, 6);
         const previewLabel = this.text(previewBox, "", 0, 0, 13, WestColors.INK_DARK);
 
         // (4) 拟物化德州筹码盘 + 金额输入框 + 确认撕票押注大按钮
@@ -4820,10 +5722,10 @@ export class GameApp extends Component {
             const chipNode = new Node(`Chip${val}`);
             chipNode.layer = deskBox.layer || Layers.Enum.UI_2D;
             deskBox.addChild(chipNode);
-            chipNode.setPosition(chipX[idx], -55);
-            chipNode.addComponent(UITransform).setContentSize(64, 46);
+            chipNode.setPosition(chipX[idx], -50);
+            chipNode.addComponent(UITransform).setContentSize(64, 44);
 
-            WestStyle.drawPokerChip(chipNode, 64, 46, val, isChipSelected);
+            WestStyle.drawPokerChip(chipNode, 64, 44, val, isChipSelected);
             const chipLabel = this.text(chipNode, `${val}`, 0, 0, 14, isChipSelected ? WestColors.GOLD_BRIGHT : WestColors.PARCHMENT_LIGHT);
             chipNodes.push({ node: chipNode, val, label: chipLabel });
 
@@ -4840,9 +5742,9 @@ export class GameApp extends Component {
             deskBox,
             I18n.t("race.amountPlaceholder"),
             90,
-            -55,
+            -50,
             96,
-            46,
+            44,
             String(this.amount),
         );
 
@@ -4871,9 +5773,9 @@ export class GameApp extends Component {
         const confirmBtn = new Node("ConfirmBetBtn");
         confirmBtn.layer = deskBox.layer || Layers.Enum.UI_2D;
         deskBox.addChild(confirmBtn);
-        confirmBtn.setPosition(245, -55);
-        confirmBtn.addComponent(UITransform).setContentSize(185, 46);
-        WestStyle.drawActionBanner(confirmBtn, 185, 46, true);
+        confirmBtn.setPosition(245, -50);
+        confirmBtn.addComponent(UITransform).setContentSize(185, 44);
+        WestStyle.drawActionBanner(confirmBtn, 185, 44, true);
 
         const confirmBtnText = this.text(confirmBtn, "", 0, 0, 16, WestColors.GOLD_BRIGHT);
 
@@ -4883,7 +5785,7 @@ export class GameApp extends Component {
             const bettingOpen = this.round?.state === RaceState.Betting;
             if (bettingOpen !== lastBettingOpen) {
                 lastBettingOpen = bettingOpen;
-                WestStyle.drawActionBanner(confirmBtn, 185, 46, bettingOpen);
+                WestStyle.drawActionBanner(confirmBtn, 185, 44, bettingOpen);
             }
             confirmBtnText.string = this.isSubmitting
                 ? I18n.t("common.submitting")
@@ -4912,7 +5814,7 @@ export class GameApp extends Component {
         // (4B) 赛前亮相圈与骑师贴士横幅
         if (this.paddockInfo && this.paddockInfo.recommendations && this.paddockInfo.recommendations.length > 0) {
             const topRec = this.paddockInfo.recommendations[0];
-            const paddockBar = this.box(deskBox, 0, -96, 670, 26, WestColors.WOOD_DARK, 6);
+            const paddockBar = this.box(deskBox, 0, -90, 670, 26, WestColors.WOOD_DARK, 6);
             const stars = "★".repeat(topRec.starRating);
             this.text(
                 paddockBar,
@@ -4929,7 +5831,7 @@ export class GameApp extends Component {
 
         // (4C) 全服超级彩金雨资格提示 (PRD 3.2: 当轮下注满50币享受彩金雨瓜分特权)
         if (currentBetTotalAmount >= 50) {
-            const rainBar = this.box(deskBox, 0, -125, 670, 24, WestColors.WOOD_DARK, 6);
+            const rainBar = this.box(deskBox, 0, -118, 670, 24, WestColors.WOOD_DARK, 6);
             const g = rainBar.getComponent(Graphics);
             if (g) {
                 g.strokeColor = WestColors.GOLD_METALLIC;
@@ -4938,7 +5840,7 @@ export class GameApp extends Component {
             }
             this.text(rainBar, `💎 当轮已投 $${currentBetTotalAmount} · 已锁定全服彩金雨特权！`, 0, 0, 12, WestColors.GOLD_BRIGHT);
         } else if (currentBetTotalAmount > 0) {
-            const rainBar = this.box(deskBox, 0, -125, 670, 24, WestColors.WOOD_DARK, 6);
+            const rainBar = this.box(deskBox, 0, -118, 670, 24, WestColors.WOOD_DARK, 6);
             const needed = (50 - currentBetTotalAmount).toFixed(1);
             this.text(rainBar, `🌧️ 当前已投 $${currentBetTotalAmount} · 差 $${needed} 激活彩金雨`, 0, 0, 12, WestColors.PARCHMENT_LIGHT);
         }
@@ -4948,9 +5850,9 @@ export class GameApp extends Component {
             deskBox,
             "🎰 酒馆消遣 (幸运转盘 / 拼骰比大小) 🎲",
             0,
-            -156,
+            -148,
             460,
-            32,
+            30,
             () => {
                 this.showSaloonMinigamesModal(root);
             },
@@ -4959,8 +5861,8 @@ export class GameApp extends Component {
         );
 
         // (5) 下注选定提示与系统消息
-        const selectionHintLabel = this.text(deskBox, "", 0, -186, 14, WestColors.GOLD_BRIGHT);
-        const messageLabel = this.text(deskBox, this.message, 0, -206, 13, WestColors.PARCHMENT_LIGHT);
+        const selectionHintLabel = this.text(deskBox, "", 0, -178, 14, WestColors.GOLD_BRIGHT);
+        const messageLabel = this.text(deskBox, this.message, 0, -198, 13, WestColors.PARCHMENT_LIGHT);
         this.raceMessageLabel = messageLabel;
 
         // (6) 边境快捷下注工具栏（木质吊牌，主城、我的注单、赛马名录、刷新局势）
@@ -4968,9 +5870,9 @@ export class GameApp extends Component {
             deskBox,
             `🏠 主城`,
             -246,
-            -246,
+            -236,
             156,
-            42,
+            40,
             () => {
                 void this.show("lobby");
             },
@@ -4981,9 +5883,9 @@ export class GameApp extends Component {
             deskBox,
             `📜 我的注单`,
             -82,
-            -246,
+            -236,
             156,
-            42,
+            40,
             () => {
                 void this.show("bets");
             },
@@ -4994,9 +5896,9 @@ export class GameApp extends Component {
             deskBox,
             `🐴 赛马名录`,
             82,
-            -246,
+            -236,
             156,
-            42,
+            40,
             () => {
                 void this.show("stable");
             },
@@ -5007,9 +5909,9 @@ export class GameApp extends Component {
             deskBox,
             `🔄 刷新局势`,
             246,
-            -246,
+            -236,
             156,
-            42,
+            40,
             () => {
                 void this.show("race");
             },
@@ -5022,13 +5924,13 @@ export class GameApp extends Component {
             deskBox,
             "🌵 柯尔特边境特区赛马会 · 独赢与连赢双模式 · 实时结算 🌵",
             0,
-            -290,
+            -276,
             12,
             WestColors.TEXT_MUTED,
         );
 
         // (4E) 官方倒计时说明（严格等待全员倒计时，严禁提前开赛）
-        const readyNoticeBar = this.box(deskBox, 0, -126, 480, 26, WestColors.WOOD_DARK, 6);
+        const readyNoticeBar = this.box(deskBox, 0, -118, 480, 26, WestColors.WOOD_DARK, 6);
         this.text(readyNoticeBar, "⏳ 官方下注倒计时进行中 · 所有玩家统一步调开闸", 0, 0, 12, WestColors.TEXT_MUTED);
 
         const updateRaceUI = (syncInput = true): void => {
@@ -5045,11 +5947,11 @@ export class GameApp extends Component {
                 const g = t.node.getComponent(Graphics) || t.node.addComponent(Graphics);
                 g.clear();
                 g.fillColor = isTabCurrent ? WestColors.BANDANA_RED : WestColors.WOOD_DARK;
-                g.roundRect(-63, -17, 126, 34, 6);
+                g.roundRect(-46, -16, 92, 32, 6);
                 g.fill();
                 g.strokeColor = isTabCurrent ? WestColors.GOLD_BRIGHT : WestColors.BRASS_FRAME;
                 g.lineWidth = isTabCurrent ? 2.0 : 1.0;
-                g.roundRect(-78, -17, 156, 34, 6);
+                g.roundRect(-46, -16, 92, 32, 6);
                 g.stroke();
                 t.labelNode.color = isTabCurrent ? WestColors.GOLD_BRIGHT : WestColors.TEXT_PARCHMENT;
             });
@@ -5061,11 +5963,11 @@ export class GameApp extends Component {
                 if (g) {
                     g.clear();
                     g.fillColor = isCurrent ? WestColors.BANDANA_RED : WestColors.LEATHER_SADDLE;
-                    g.roundRect(-38, -14, 76, 28, 6);
+                    g.roundRect(-26, -13, 52, 26, 6);
                     g.fill();
                     g.strokeColor = isCurrent ? WestColors.GOLD_BRIGHT : WestColors.PARCHMENT_LIGHT;
                     g.lineWidth = 1.2;
-                    g.roundRect(-38, -14, 76, 28, 6);
+                    g.roundRect(-26, -13, 52, 26, 6);
                     g.stroke();
                 }
                 const lbl = node.getComponentInChildren(Label);
@@ -5221,7 +6123,7 @@ export class GameApp extends Component {
                 const oA = horseA ? Number(horseA.odds) : 3.0;
                 const oB = horseB ? Number(horseB.odds) : 4.0;
                 const oC = horseC ? Number(horseC.odds) : 5.0;
-                trifectaCalcOdds = Math.max(10.0, Math.min(2000.0, Math.round(oA * oB * oC * 0.85 * 10) / 10));
+                trifectaCalcOdds = Math.max(6.0, Math.min(2000.0, Math.round(oA * oB * oC * 0.50 * 10) / 10));
                 trifectaOddsLabel.string = `👑 三重彩: [1st:${this.trifectaFirstHorse}] ➔ [2nd:${this.trifectaSecondHorse}] ➔ [3rd:${this.trifectaThirdHorse}] | 赔率: x${trifectaCalcOdds.toFixed(1)}`;
             } else {
                 trifectaOddsLabel.string = "👑 请在上方依次选定不同名次的冠(1st)、亚(2nd)、季(3rd)军马号";
@@ -5239,78 +6141,97 @@ export class GameApp extends Component {
                 amountInput.string = String(this.amount);
             }
 
-            // 5. 羊皮纸实时预估账单
+            // 5. 羊皮纸实时预估账单（符合国人直观算账习惯：投注额 ➔ 预计可得 ➔ 预计净赢）
             const currentDilution = this.round?.dilutionFactor ?? 1.0;
             const minRequiredAmount = this.betMode === "WIN" ? 2 : 5;
             const isEn = I18n.getLocale() === "en-US";
             previewLabel.fontSize = isEn ? 11 : 12;
 
+            let hasValidSelection = false;
+
             if (this.amount < minRequiredAmount) {
                 previewBox.active = true;
                 previewLabel.string = isEn
-                    ? `⚠️ Min bet for ${this.betMode === "WIN" ? "Win" : "Multi-Horse"} is ${minRequiredAmount} gold (Entered: ${this.amount} 🪙)`
-                    : `⚠️ 【${this.betMode === "WIN" ? "独赢" : "街机复合"}】注式单注起投门槛为 ${minRequiredAmount} 金币（当前输入: ${this.amount} 🪙）`;
+                    ? `⚠️ Min bet for ${this.betMode === "WIN" ? "Win" : "Multi-Horse"} is ${minRequiredAmount} gold (Entered: ${this.amount} 金币)`
+                    : `⚠️ 【${this.betMode === "WIN" ? "独赢" : "街机复合"}】起投门槛为 ${minRequiredAmount} 金币（当前输入: ${this.amount} 金币）`;
             } else if (this.betMode === "TRIFECTA") {
                 if (trifectaCalcOdds > 0) {
+                    hasValidSelection = true;
                     previewBox.active = true;
                     const preview = this.calculateBetPreview(this.amount, trifectaCalcOdds, currentDilution);
-                    const feePercent = (preview.feeRate * 100).toFixed(2);
+                    const netProfit = (preview.netReward - this.amount).toFixed(2);
                     previewLabel.string = isEn
-                        ? `👑 Trifecta[${this.trifectaFirstHorse}->${this.trifectaSecondHorse}->${this.trifectaThirdHorse}] x${trifectaCalcOdds.toFixed(1)} | Gross:${preview.grossReward.toFixed(2)} Fee:${preview.estimatedFee.toFixed(2)}(${feePercent}%) Net:${preview.netReward.toFixed(2)} 🪙`
-                        : `👑 三重彩[${this.trifectaFirstHorse}->${this.trifectaSecondHorse}->${this.trifectaThirdHorse}] 赔率:x${trifectaCalcOdds.toFixed(1)}  毛奖:${preview.grossReward.toFixed(2)}  手续费:${preview.estimatedFee.toFixed(2)}(${feePercent}%)  净奖:${preview.netReward.toFixed(2)} 🪙`;
+                        ? `👑 Trifecta[${this.trifectaFirstHorse}->${this.trifectaSecondHorse}->${this.trifectaThirdHorse}] x${trifectaCalcOdds.toFixed(1)} | Bet:${this.amount} ➔ Win:${preview.netReward.toFixed(2)} (Profit:+${netProfit}) 金币`
+                        : `👑 三重彩[${this.trifectaFirstHorse}->${this.trifectaSecondHorse}->${this.trifectaThirdHorse}] 赔率:x${trifectaCalcOdds.toFixed(1)}  投:${this.amount} 金币 ➔ 中可得:${preview.netReward.toFixed(2)} 金币 (净赢:+${netProfit} 金币)`;
                 } else {
                     previewBox.active = false;
                 }
             } else if (this.betMode === "EXACTA") {
                 if (exactaCalcOdds > 0) {
+                    hasValidSelection = true;
                     previewBox.active = true;
                     const preview = this.calculateBetPreview(this.amount, exactaCalcOdds, currentDilution);
-                    const feePercent = (preview.feeRate * 100).toFixed(2);
+                    const netProfit = (preview.netReward - this.amount).toFixed(2);
                     previewLabel.string = isEn
-                        ? `🎯 Exacta[${this.exactaFirstHorse}->${this.exactaSecondHorse}] x${exactaCalcOdds.toFixed(1)} | Gross:${preview.grossReward.toFixed(2)} Fee:${preview.estimatedFee.toFixed(2)}(${feePercent}%) Net:${preview.netReward.toFixed(2)} 🪙`
-                        : `🎯 二连单[${this.exactaFirstHorse}->${this.exactaSecondHorse}] 赔率:x${exactaCalcOdds.toFixed(1)}  毛奖:${preview.grossReward.toFixed(2)}  手续费:${preview.estimatedFee.toFixed(2)}(${feePercent}%)  净奖:${preview.netReward.toFixed(2)} 🪙`;
+                        ? `🎯 Exacta[${this.exactaFirstHorse}->${this.exactaSecondHorse}] x${exactaCalcOdds.toFixed(1)} | Bet:${this.amount} ➔ Win:${preview.netReward.toFixed(2)} (Profit:+${netProfit}) 金币`
+                        : `🎯 二连单[${this.exactaFirstHorse}->${this.exactaSecondHorse}] 赔率:x${exactaCalcOdds.toFixed(1)}  投:${this.amount} 金币 ➔ 中可得:${preview.netReward.toFixed(2)} 金币 (净赢:+${netProfit} 金币)`;
                 } else {
                     previewBox.active = false;
                 }
             } else if (this.betMode === "PLACE") {
                 const sel = this.round?.horses.find((h) => h.horseNo === this.selectedHorse);
                 if (sel) {
+                    hasValidSelection = true;
                     previewBox.active = true;
                     const pOdds = Math.max(1.15, Math.min(4.50, Math.round(Number(sel.odds) * 0.40 * 100) / 100));
                     const preview = this.calculateBetPreview(this.amount, pOdds, currentDilution);
-                    const feePercent = (preview.feeRate * 100).toFixed(2);
+                    const netProfit = (preview.netReward - this.amount).toFixed(2);
                     previewLabel.string = isEn
-                        ? `🛡️ Place[No.${this.selectedHorse}] x${pOdds.toFixed(2)} | Gross:${preview.grossReward.toFixed(2)} Fee:${preview.estimatedFee.toFixed(2)}(${feePercent}%) Net:${preview.netReward.toFixed(2)} 🪙`
-                        : `🛡️ 位置[${this.selectedHorse}号马] 赔率:x${pOdds.toFixed(2)}  毛奖:${preview.grossReward.toFixed(2)}  手续费:${preview.estimatedFee.toFixed(2)}(${feePercent}%)  净奖:${preview.netReward.toFixed(2)} 🪙`;
+                        ? `🛡️ Place[No.${this.selectedHorse}] x${pOdds.toFixed(2)} | Bet:${this.amount} ➔ Win:${preview.netReward.toFixed(2)} (Profit:+${netProfit}) 金币`
+                        : `🛡️ 位置[${this.selectedHorse}号马] 赔率:x${pOdds.toFixed(2)}  投:${this.amount} 金币 ➔ 中可得:${preview.netReward.toFixed(2)} 金币 (净赢:+${netProfit} 金币)`;
                 } else {
                     previewBox.active = false;
                 }
             } else if (this.betMode === "QUINELLA") {
                 if (this.selectedQuinellaCombo) {
+                    hasValidSelection = true;
                     previewBox.active = true;
                     const parts = this.selectedQuinellaCombo.split("-").map(Number);
                     const qOdds = getQuinellaOdds(parts[0], parts[1]);
                     const preview = this.calculateBetPreview(this.amount, qOdds, currentDilution);
-                    const feePercent = (preview.feeRate * 100).toFixed(2);
-                    const diluteTag = preview.isDiluted ? (isEn ? " (Diluted)" : ` (稀释${preview.isFloorApplied ? "·保底1.05x" : ""})`) : "";
+                    const netProfit = (preview.netReward - this.amount).toFixed(2);
+                    const diluteTag = preview.isDiluted ? (isEn ? " (Diluted)" : ` (稀释)`) : "";
                     previewLabel.string = isEn
-                        ? `🎰 Quinella[${this.selectedQuinellaCombo}] x${qOdds.toFixed(1)} | Gross:${preview.grossReward.toFixed(2)}${diluteTag} Fee:${preview.estimatedFee.toFixed(2)}(${feePercent}%) Net:${preview.netReward.toFixed(2)} 🪙`
-                        : `🎰 连赢[${this.selectedQuinellaCombo}] 赔率:x${qOdds.toFixed(1)}  毛奖:${preview.grossReward.toFixed(2)}${diluteTag}  手续费:${preview.estimatedFee.toFixed(2)}(${feePercent}%)  净奖:${preview.netReward.toFixed(2)} 🪙`;
+                        ? `🎰 Quinella[${this.selectedQuinellaCombo}] x${qOdds.toFixed(1)} | Bet:${this.amount} ➔ Win:${preview.netReward.toFixed(2)}${diluteTag} (Profit:+${netProfit}) 金币`
+                        : `🎰 连赢[${this.selectedQuinellaCombo}] 赔率:x${qOdds.toFixed(1)}  投:${this.amount} 金币 ➔ 中可得:${preview.netReward.toFixed(2)} 金币${diluteTag} (净赢:+${netProfit} 金币)`;
                 } else {
                     previewBox.active = false;
                 }
             } else {
                 const selectedHorseData = this.round?.horses.find((h) => h.horseNo === this.selectedHorse);
                 if (selectedHorseData) {
+                    hasValidSelection = true;
                     previewBox.active = true;
                     const preview = this.calculateBetPreview(this.amount, Number(selectedHorseData.odds), currentDilution);
-                    const feePercent = (preview.feeRate * 100).toFixed(2);
-                    const diluteTag = preview.isDiluted ? (isEn ? " (Diluted)" : ` (稀释${preview.isFloorApplied ? "·保底1.05x" : ""})`) : "";
+                    const netProfit = (preview.netReward - this.amount).toFixed(2);
+                    const diluteTag = preview.isDiluted ? (isEn ? " (Diluted)" : ` (稀释)`) : "";
                     previewLabel.string = isEn
-                        ? `🏇 Win[No.${this.selectedHorse}] x${Number(selectedHorseData.odds).toFixed(2)} | Gross:${preview.grossReward.toFixed(2)}${diluteTag} Fee:${preview.estimatedFee.toFixed(2)}(${feePercent}%) Net:${preview.netReward.toFixed(2)} 🪙`
-                        : `${I18n.t("race.previewOdds")}${Number(selectedHorseData.odds).toFixed(2)}  ${I18n.t("race.previewGross")}${preview.grossReward.toFixed(2)}${diluteTag}  ${I18n.t("race.previewFee")}${preview.estimatedFee.toFixed(2)}(${feePercent}%)  ${I18n.t("race.previewNet")}${preview.netReward.toFixed(2)}`;
+                        ? `🏇 Win[No.${this.selectedHorse}] x${Number(selectedHorseData.odds).toFixed(2)} | Bet:${this.amount} ➔ Win:${preview.netReward.toFixed(2)}${diluteTag} (Profit:+${netProfit}) 金币`
+                        : `🏇 独赢[${this.selectedHorse}号马] 赔率:x${Number(selectedHorseData.odds).toFixed(2)}  投:${this.amount} 金币 ➔ 中可得:${preview.netReward.toFixed(2)} 金币${diluteTag} (净赢:+${netProfit} 金币)`;
                 } else {
                     previewBox.active = false;
+                }
+            }
+
+            // 动态更新下注按钮文字（国人习惯：清晰明确、未选提示、已选带金额）
+            const isBettingActive = this.round?.state === RaceState.Betting;
+            if (isBettingActive && !this.isSubmitting) {
+                if (hasValidSelection) {
+                    confirmBtnText.string = isEnRace ? `🔥 BET (${this.amount} 金币)` : `🔥 确认投注 (${this.amount} 金币)`;
+                    confirmBtnText.color = WestColors.GOLD_BRIGHT;
+                } else {
+                    confirmBtnText.string = isEnRace ? "⚠️ Pick Horse" : "⚠️ 请先选定马号";
+                    confirmBtnText.color = WestColors.GOLD_METALLIC;
                 }
             }
 
@@ -5325,31 +6246,31 @@ export class GameApp extends Component {
                     this.trifectaFirstHorse !== this.trifectaThirdHorse &&
                     this.trifectaSecondHorse !== this.trifectaThirdHorse
                 ) {
-                    selectionHint = `👑 已选三重彩: [1st:${this.trifectaFirstHorse}号] ➔ [2nd:${this.trifectaSecondHorse}号] ➔ [3rd:${this.trifectaThirdHorse}号] (投: ${this.amount} 🪙)`;
+                    selectionHint = `👑 已选三重彩: [1st:${this.trifectaFirstHorse}号] ➔ [2nd:${this.trifectaSecondHorse}号] ➔ [3rd:${this.trifectaThirdHorse}号] (投: ${this.amount} 金币)`;
                 } else {
                     selectionHint = "👑 请分别指定冠军(1st)、亚军(2nd)与季军(3rd)马匹";
                 }
             } else if (this.betMode === "EXACTA") {
                 if (this.exactaFirstHorse > 0 && this.exactaSecondHorse > 0 && this.exactaFirstHorse !== this.exactaSecondHorse) {
-                    selectionHint = `🎯 已选二连单: [1st:${this.exactaFirstHorse}号] ➔ [2nd:${this.exactaSecondHorse}号] (投: ${this.amount} 🪙)`;
+                    selectionHint = `🎯 已选二连单: [1st:${this.exactaFirstHorse}号] ➔ [2nd:${this.exactaSecondHorse}号] (投: ${this.amount} 金币)`;
                 } else {
                     selectionHint = "🎯 请选定不同的冠军与亚军马号";
                 }
             } else if (this.betMode === "PLACE") {
                 if (this.selectedHorse > 0) {
-                    selectionHint = `🛡️ 已选位置保底: ${this.selectedHorse}号马 (进入前2名即中奖，投: ${this.amount} 🪙)`;
+                    selectionHint = `🛡️ 已选位置保底: ${this.selectedHorse}号马 (进入前2名即中奖，投: ${this.amount} 金币)`;
                 } else {
                     selectionHint = "🛡️ 请在上方选定 1 匹马进行位置保底投注";
                 }
             } else if (this.betMode === "QUINELLA") {
                 if (this.selectedQuinellaCombo) {
-                    selectionHint = `🎰 已选连赢: [${this.selectedQuinellaCombo}] (冠亚军无序，投: ${this.amount} 🪙)`;
+                    selectionHint = `🎰 已选连赢: [${this.selectedQuinellaCombo}] (冠亚军无序，投: ${this.amount} 金币)`;
                 } else {
                     selectionHint = "🎰 请在上方 15 组矩阵中选择一组二连碰组合 (如 1-2)";
                 }
             } else {
                 if (this.selectedHorse > 0) {
-                    selectionHint = `${I18n.t("race.selected")}${this.selectedHorse} ${I18n.t("race.horse")} (投: ${this.amount} 🪙)`;
+                    selectionHint = `${I18n.t("race.selected")}${this.selectedHorse} ${I18n.t("race.horse")} (投: ${this.amount} 金币)`;
                 } else {
                     selectionHint = I18n.t("race.unselected");
                 }
@@ -5367,9 +6288,9 @@ export class GameApp extends Component {
 
     /** 构建近 15 期赛马历史走势路单与连赢二连碰冷热矩阵。 */
     private async buildTrendBeadPlateModal(root: Node): Promise<void> {
-        const mask = this.box(root, 360, 640, 720, 1280, new Color(0, 0, 0, 220), 0);
-        this.bindClick(mask, () => mask.destroy());
+        const mask = this.createModalMask(root, new Color(0, 0, 0, 220));
         const modalBox = this.grandSaloonBox(mask, 0, 0, 670, 960, 16, WestColors.WOOD_DARK, WestColors.BRASS_FRAME);
+        this.attachModalShield(mask, modalBox, () => mask.destroy());
         this.addModalCloseBtn(modalBox, 670, 960, () => mask.destroy());
 
         // 顶部黑板标题
@@ -5392,7 +6313,16 @@ export class GameApp extends Component {
                 };
             }>("/api/race/history?limit=15");
 
-            const historyItems = (res.data?.items ?? []).filter((x) => !x.isSkipped && x.winnerHorseNo);
+            type HistoryEntry = {
+                roundId: number;
+                roundNo: string;
+                winnerHorseNo: number | null;
+                secondHorseNo?: number | null;
+                quinellaCombo?: string | null;
+                isSkipped?: boolean;
+            };
+            const rawItems: HistoryEntry[] = Array.isArray(res.data) ? res.data : (res.data?.items ?? []);
+            const historyItems = rawItems.filter((x: HistoryEntry) => !x.isSkipped && x.winnerHorseNo);
 
             const horseColors = [
                 new Color(217, 83, 79, 255),  // 1: 烈焰红
@@ -5423,7 +6353,7 @@ export class GameApp extends Component {
                     const by = startY - row * cellH;
 
                     const winnerNo = item.winnerHorseNo ?? 1;
-                    const bead = this.box(beadBoard, bx, by, 38, 38, horseColors[winnerNo - 1], 19);
+                    const bead = this.box(beadBoard, bx, by, 38, 38, horseColors[(winnerNo - 1) % horseColors.length] || WestColors.GOLD_BRIGHT, 19);
                     const bg = bead.getComponent(Graphics);
                     if (bg) {
                         bg.strokeColor = WestColors.BRASS_FRAME;
@@ -5521,22 +6451,49 @@ export class GameApp extends Component {
             new Color(240, 173, 78, 255), // 4: 黄金橙
             new Color(155, 89, 182, 255), // 5: 魅影紫
             new Color(218, 165, 32, 255), // 6: 皇家金
+            new Color(230, 105, 55, 255), // 7: 炽烈橙红
+            new Color(45, 140, 125, 255), // 8: 翡翠青
+            new Color(65, 105, 225, 255), // 9: 皇家蓝
+            new Color(199, 21, 133, 255), // 10: 玫瑰洋红
+            new Color(107, 142, 35, 255), // 11: 橄榄绿
+            new Color(70, 130, 180, 255), // 12: 钢青蓝
+            new Color(235, 140, 40, 255), // 13: 琥珀金
+            new Color(160, 82, 45, 255),  // 14: 赭石棕
+            new Color(180, 195, 215, 255),// 15: 铂银亮
+            new Color(60, 60, 75, 255),   // 16: 玄铁灰
+            new Color(112, 128, 144, 255),// 17: 石板灰
+            new Color(184, 115, 51, 255), // 18: 古铜金
+            new Color(255, 193, 37, 255), // 19: 金羽黄
+            new Color(72, 61, 139, 255),  // 20: 暗夜靛蓝
         ];
 
-        // 牧场泥道大围栏（老橡木原木面板）
+        // 2D 赛马竞技场地图与全景跑道系统 (RaceTrack2D: 舞台高 360px，居中于 915px)
         const arenaBox = new Node("ArenaTrackBox");
         arenaBox.layer = root.layer || Layers.Enum.UI_2D;
         root.addChild(arenaBox);
-        arenaBox.setPosition(360, 946);
-        arenaBox.addComponent(UITransform).setContentSize(696, 330);
-        WestStyle.drawGrandSaloonPanel(arenaBox, 696, 330, 12, WestColors.BG_DIRT_TRACK, WestColors.WOOD_FRAME);
+        arenaBox.setPosition(360, 926);
+        // 记录 arenaBox 引用，用于赛道摄像机平滑跟踪平移
+        this.arenaTrackNode = arenaBox;
+        this.cameraCurrentX = 360;
+        this.cameraTargetX = 360;
+        arenaBox.addComponent(UITransform).setContentSize(696, 360);
+
+        // 挂载高沉浸感 2D 赛马竞技场地表与全景地图组件
+        const raceTrack2D = arenaBox.addComponent(RaceTrack2D);
+        raceTrack2D.setup(
+            696,
+            360,
+            this.round?.trackType ?? "Dirt",
+            this.round?.weather ?? "Sunny",
+        );
+        this.raceTrack2D = raceTrack2D;
 
         // 顶部悬挂动态解说跑马灯条 (左侧 530px) + 实时前三排位看板 (右侧 136px)
-        const commentaryBar = this.woodBox(arenaBox, -70, 142, 530, 28, 6, WestColors.WOOD_DARK, WestColors.BRASS_FRAME);
+        const commentaryBar = this.woodBox(arenaBox, -70, 155, 530, 26, 6, WestColors.WOOD_DARK, WestColors.BRASS_FRAME);
         const commentaryLabel = this.text(commentaryBar, "🎙️ 现场解说席就绪 · 柯尔特边境赛马会", 0, 0, 13, WestColors.GOLD_BRIGHT);
         this.raceCommentaryLabel = commentaryLabel;
 
-        const liveRankBoard = this.woodBox(arenaBox, 265, 142, 136, 28, 6, WestColors.WOOD_DARK, WestColors.GOLD_METALLIC);
+        const liveRankBoard = this.woodBox(arenaBox, 265, 155, 136, 26, 6, WestColors.WOOD_DARK, WestColors.GOLD_METALLIC);
         const liveRankLabel = this.text(liveRankBoard, "🥇- 🥈- 🥉-", 0, 0, 12, WestColors.GOLD_BRIGHT);
         this.liveRankLabel = liveRankLabel;
 
@@ -5544,7 +6501,7 @@ export class GameApp extends Component {
         const radarNode = new Node("MiniTrackRadar");
         radarNode.layer = arenaBox.layer || Layers.Enum.UI_2D;
         arenaBox.addChild(radarNode);
-        radarNode.setPosition(0, 120, 0);
+        radarNode.setPosition(0, 135, 0);
         radarNode.addComponent(UITransform).setContentSize(540, 12);
         radarNode.addComponent(Graphics);
         this.trackRadarNode = radarNode;
@@ -5574,41 +6531,41 @@ export class GameApp extends Component {
         pfNode.active = false;
         this.photoFinishBannerNode = pfNode;
 
-        // 起点线与终点线立柱 (红白格相间终点线 + 原木栅栏立柱)
-        const startPost = this.box(arenaBox, -270, -10, 6, 275, WestColors.LEATHER_MEDIUM, 2);
-        this.text(startPost, "🚩", 0, 130, 16);
+        // 起点线与终点线立柱 (红白格相间终点线 + 原木栅栏立柱，高度拓至 310px 黄金撑满)
+        const startPost = this.box(arenaBox, -270, -10, 6, 310, WestColors.LEATHER_MEDIUM, 2);
+        this.text(startPost, "🚩", 0, 148, 16);
 
         const finishPost = new Node("FinishPostCheckered");
         finishPost.layer = arenaBox.layer || Layers.Enum.UI_2D;
         arenaBox.addChild(finishPost);
         finishPost.setPosition(270, -10, 0);
-        finishPost.addComponent(UITransform).setContentSize(12, 275);
+        finishPost.addComponent(UITransform).setContentSize(12, 310);
         const fg = finishPost.addComponent(Graphics);
         fg.fillColor = WestColors.LEATHER_DARK;
-        fg.rect(-4, -137, 8, 275);
+        fg.rect(-4, -155, 8, 310);
         fg.fill();
-        const checkH = 14;
-        const totalChecks = Math.floor(275 / checkH);
+        const checkH = 15;
+        const totalChecks = Math.floor(310 / checkH);
         for (let c = 0; c < totalChecks; c++) {
             fg.fillColor = c % 2 === 0 ? WestColors.BANDANA_RED : new Color(250, 250, 250, 255);
-            fg.rect(-6, -137 + c * checkH, 12, checkH);
+            fg.rect(-6, -155 + c * checkH, 12, checkH);
             fg.fill();
         }
-        this.text(finishPost, "🏁", 0, 130, 16);
+        this.text(finishPost, "🏁", 0, 148, 16);
 
-        const currentModeHorses = this.getModeHorses(this.betMode);
+        const currentModeHorses = this.getModeHorses(this.betMode) ?? [];
+        for (const h of currentModeHorses) {
+            HorseSprites.loadHorseGallopAnimation(h.horseNo, () => {});
+        }
         for (let laneIdx = 0; laneIdx < 6; laneIdx += 1) {
             const horseItem = currentModeHorses[laneIdx];
             const laneY = 135 - (laneIdx + 1) * 41;
-            const lane = this.box(
-                arenaBox,
-                0,
-                laneY,
-                676,
-                38,
-                new Color(176, 137, 104, 180), // DUST_BROWN
-                8,
-            );
+            // 跑道透明容器节点（底层已由 RaceTrack2D 渲染细腻的 2D 草地/泥地/细沙地表与白灰标线）
+            const lane = new Node(`Lane_${laneIdx + 1}`);
+            lane.layer = arenaBox.layer || Layers.Enum.UI_2D;
+            arenaBox.addChild(lane);
+            lane.setPosition(0, laneY, 0);
+            lane.addComponent(UITransform).setContentSize(676, 38);
 
             // 本轮实际参赛马匹不足 6 匹时，该跑道仅保留赛道，不创建幻影马，避免马号重复覆盖 this.horses 映射。
             if (!horseItem) {
@@ -5619,13 +6576,14 @@ export class GameApp extends Component {
             // 赛道马号木标牌（支持点击查看 2D 写实古典画作与解剖三视图）
             const badge = this.box(lane, -318, 0, 28, 28, WestColors.WOOD_DARK, 6);
             const bg = badge.getComponent(Graphics);
+            const hColor = horseColors[(horseNo - 1) % horseColors.length] || WestColors.GOLD_BRIGHT;
             if (bg) {
-                bg.strokeColor = horseColors[horseNo - 1];
+                bg.strokeColor = hColor;
                 bg.lineWidth = 1.8;
                 bg.roundRect(-14, -14, 28, 28, 6);
                 bg.stroke();
             }
-            this.text(badge, `${horseNo}`, 0, 0, 16, horseColors[horseNo - 1]);
+            this.text(badge, `${horseNo}`, 0, 0, 16, hColor);
             const badgeBtn = badge.addComponent(Button);
             badgeBtn.node.on(Button.EventType.CLICK, () => {
                 HorseGalleryModal.show(horseNo, this.node);
@@ -5636,7 +6594,7 @@ export class GameApp extends Component {
             hoofprintsNode.layer = lane.layer || Layers.Enum.UI_2D;
             lane.addChild(hoofprintsNode);
             hoofprintsNode.setPosition(0, 0, 0);
-            hoofprintsNode.addComponent(UITransform).setContentSize(676, 38);
+            hoofprintsNode.addComponent(UITransform).setContentSize(676, 36);
             const hoofprintsG = hoofprintsNode.addComponent(Graphics);
 
             // 马匹表现节点（与 HorseController 逻辑绑定，保持 -270 起始坐标）
@@ -5653,30 +6611,104 @@ export class GameApp extends Component {
             const controller = horseNode.addComponent(HorseController);
             controller.horseVisual = horseNode;
             controller.setVisual2D(visual2D);
+            controller.setLaneIndex(laneIdx);
             controller.setHoofprintGraphics(hoofprintsG);
+            controller.setRaceTrack2D(this.raceTrack2D);
             this.horses.set(horseNo, controller);
+
+            // 若玩家本轮已押注该马匹，在其头顶悬浮常驻 🎯 瞄准角标，方便赛中实时聚焦追踪
+            const isBetHorse = this.myRoundOrders.some(
+                (o) => o.horseNo === horseNo || o.secondHorseNo === horseNo || o.thirdHorseNo === horseNo,
+            );
+            if (isBetHorse) {
+                const betBadgeNode = new Node(`BetBadge${horseNo}`);
+                betBadgeNode.layer = horseNode.layer || Layers.Enum.UI_2D;
+                horseNode.addChild(betBadgeNode);
+                betBadgeNode.setPosition(0, 32, 0);
+                this.text(betBadgeNode, "🎯", 0, 0, 16);
+            }
         }
 
-        // 赛场内实时 HUD：
+        // 终点红白胜利缎带 (Finish Line Victory Ribbon: 跨越 6 条道次，断裂时物理飘扬并爆破彩屑)
+        const ribbonNode = new Node("FinishRibbonNode");
+        ribbonNode.layer = arenaBox.layer || Layers.Enum.UI_2D;
+        arenaBox.addChild(ribbonNode);
+        ribbonNode.setPosition(270, -10, 0);
+        this.finishRibbonNode = ribbonNode;
+        this.buildFinishRibbon();
+
+        // 终点爆破彩纸与金箔粒子节点 (Ribbon Confetti FX)
+        const confettiNode = new Node("RibbonConfettiNode");
+        confettiNode.layer = arenaBox.layer || Layers.Enum.UI_2D;
+        arenaBox.addChild(confettiNode);
+        confettiNode.setPosition(0, 0, 0);
+        this.ribbonConfettiG = confettiNode.addComponent(Graphics);
+
+        // 👑 第一名动态领跑“1st 👑”微皇冠指示器 (跟随领跑马匹平滑悬浮)
+        const crownNode = new Node("LeaderCrownNode");
+        crownNode.layer = arenaBox.layer || Layers.Enum.UI_2D;
+        arenaBox.addChild(crownNode);
+        crownNode.setPosition(0, 0, 0);
+        crownNode.addComponent(UITransform).setContentSize(42, 28);
+        const cg = crownNode.addComponent(Graphics);
+        // 绘制烫金立体皇冠
+        cg.fillColor = new Color(255, 205, 40, 245);
+        cg.moveTo(-14, -6);
+        cg.lineTo(-14, 8);
+        cg.lineTo(-7, 2);
+        cg.lineTo(0, 12);
+        cg.lineTo(7, 2);
+        cg.lineTo(14, 8);
+        cg.lineTo(14, -6);
+        cg.close();
+        cg.fill();
+        // 皇冠金边轮廓
+        cg.strokeColor = new Color(160, 110, 10, 255);
+        cg.lineWidth = 1.4;
+        cg.moveTo(-14, -6);
+        cg.lineTo(-14, 8);
+        cg.lineTo(-7, 2);
+        cg.lineTo(0, 12);
+        cg.lineTo(7, 2);
+        cg.lineTo(14, 8);
+        cg.lineTo(14, -6);
+        cg.close();
+        cg.stroke();
+        // 红宝石小圆点镶嵌在 3 个尖峰
+        cg.fillColor = new Color(225, 35, 35, 255);
+        cg.circle(-14, 8, 2.2);
+        cg.circle(0, 12, 2.6);
+        cg.circle(14, 8, 2.2);
+        cg.fill();
+        // 皇冠底盘光晕
+        cg.fillColor = new Color(255, 255, 255, 220);
+        cg.circle(0, -1, 4.5);
+        cg.fill();
+        this.text(crownNode, "1st", 0, -1, 10, WestColors.SEAL_RED);
+        crownNode.active = false;
+        this.leaderCrownNode = crownNode;
+        this.currentLeaderHorseNo = -1;
+
+        // 赛场内实时 HUD（放置在 Y = -152，位于跑道白木护栏与最底道 -131.5 之下，绝不遮挡 6 道赛马）：
         // 左下角：皮质水囊与耐力子弹带指标 (Stamina Belt & Canteen HUD)
-        const staminaBox = this.box(arenaBox, -170, -140, 300, 36, WestColors.WOOD_DARK, 6);
+        const staminaBox = this.box(arenaBox, -175, -152, 290, 28, WestColors.WOOD_DARK, 6);
         const bulletBeltHUD = new Node("TrackBulletBeltHUD");
         bulletBeltHUD.layer = arenaBox.layer || Layers.Enum.UI_2D;
         staminaBox.addChild(bulletBeltHUD);
         bulletBeltHUD.setPosition(-50, 0, 0);
-        bulletBeltHUD.addComponent(UITransform).setContentSize(145, 26);
-        WestStyle.drawBulletBelt(bulletBeltHUD, 145, 26, 6, 6);
+        bulletBeltHUD.addComponent(UITransform).setContentSize(145, 20);
+        WestStyle.drawBulletBelt(bulletBeltHUD, 145, 20, 6, 6);
         const isEnTrack = I18n.getLocale() === "en-US";
-        this.text(staminaBox, isEnTrack ? "💧 Stamina 100%" : "💧 耐力 100%", 75, 0, isEnTrack ? 12 : 13, WestColors.PARCHMENT_LIGHT);
+        this.text(staminaBox, isEnTrack ? "💧 Stamina 100%" : "💧 耐力 100%", 75, 0, isEnTrack ? 11 : 12, WestColors.PARCHMENT_LIGHT);
 
-        // 右下角：黄铜马刺与扬鞭狂飙大按钮（带音效与屏幕剧烈震动反馈）
+        // 右下角：黄铜马刺与扬鞭狂飙大按钮（Y = -152 避免与 6 道马匹碰撞）
         this.button(
             arenaBox,
             I18n.t("race.spursBtn", "⚡ 马刺冲刺"),
-            90,
-            -140,
-            120,
-            36,
+            85,
+            -152,
+            115,
+            28,
             () => {
                 const curMode = this.getAudioMode();
                 this.shakeScreen(240, 5);
@@ -5688,16 +6720,16 @@ export class GameApp extends Component {
             },
             WestColors.SEAL_RED,
             WestColors.GOLD_BRIGHT,
-            isEnTrack ? 13 : 15,
+            isEnTrack ? 12 : 13,
         );
 
         this.button(
             arenaBox,
             I18n.t("race.whipBtn", "🏇 扬鞭疾驰"),
-            225,
-            -140,
-            120,
-            36,
+            215,
+            -152,
+            115,
+            28,
             () => {
                 const curMode = this.getAudioMode();
                 this.shakeScreen(180, 4);
@@ -5709,7 +6741,7 @@ export class GameApp extends Component {
             },
             WestColors.LEATHER_SADDLE,
             WestColors.GOLD_BRIGHT,
-            isEnTrack ? 13 : 15,
+            isEnTrack ? 12 : 13,
         );
 
         // 初始化微缩雷达与前三排位板为待命状态
@@ -5802,6 +6834,17 @@ export class GameApp extends Component {
             "/api/race/current",
         );
         this.round = response.data;
+        if (this.round && !this.round.horses) {
+            this.round.horses = [];
+        }
+        if (this.round?.horses && this.round.horses.length > 0) {
+            for (const h of this.round.horses) {
+                HorseSprites.loadHorseGallopAnimation(h.horseNo, () => {});
+            }
+        }
+        if (this.round && this.signalr) {
+            this.signalr.setRound(this.round.id);
+        }
         if (this.round?.commentaryScriptJson) {
             try {
                 this.parsedCommentary = JSON.parse(this.round.commentaryScriptJson) as CommentaryItemDto[];
@@ -6012,10 +7055,18 @@ export class GameApp extends Component {
                 })
                 .on("Reconnecting", () => {
                     this.showNetworkToast(true);
+                    this.updateNetworkIndicator();
                 })
                 .on("Connected", () => {
                     this.showNetworkToast(false);
+                    this.updateNetworkIndicator();
                     return refreshFromEvent();
+                })
+                .on("Disconnected", () => {
+                    this.updateNetworkIndicator();
+                })
+                .on("PingLatency", () => {
+                    this.updateNetworkIndicator();
                 });
         }
 
@@ -6098,11 +7149,25 @@ export class GameApp extends Component {
             primaryHorse = this.selectedHorse;
         }
 
-        const minRequired = (this.betMode && this.betMode !== "WIN") ? 5 : 2;
+        const minConfig = this.raceRules?.minimumBetAmount ?? 2;
+        const minRequired = (this.betMode && this.betMode !== "WIN") ? Math.max(5, minConfig) : minConfig;
         if (!Number.isFinite(amount) || amount < minRequired) {
             this.message = (this.betMode && this.betMode !== "WIN")
-                ? "街机复合注式最低 5 金币起注"
+                ? `街机复合注式最低 ${minRequired} 金币起注`
                 : I18n.t("race.minAmount");
+            this.updateRaceMessage(this.message);
+            return;
+        }
+
+        const maxConfig = this.raceRules?.maximumBetAmount ?? 10000;
+        if (amount > maxConfig) {
+            this.message = I18n.t("race.maxAmount");
+            this.updateRaceMessage(this.message);
+            return;
+        }
+
+        if (this.player && this.player.balance < amount) {
+            this.message = I18n.t("race.insufficientBalance");
             this.updateRaceMessage(this.message);
             return;
         }
@@ -6174,16 +7239,15 @@ export class GameApp extends Component {
      */
     private showBetReceiptModal(bet: PlaceBetResponse): void {
         const root = this.pageRoot ?? this.node;
-        const mask = this.box(root, 360, 640, 720, 1280, new Color(0, 0, 0, 225), 0);
-        mask.setSiblingIndex(9999);
+        const mask = this.createModalMask(root, new Color(0, 0, 0, 225));
 
         const closeModal = () => {
             WestAudio.playLeatherPress("COMMON");
             mask.destroy();
         };
-        this.bindClick(mask, closeModal);
 
         const modalBox = this.grandSaloonBox(mask, 0, 0, 660, 780, 16, WestColors.WOOD_DARK, WestColors.BRASS_FRAME);
+        this.attachModalShield(mask, modalBox, closeModal);
         this.addModalCloseBtn(modalBox, 660, 780, closeModal);
 
         // 弹窗弹性进入动效
@@ -6252,7 +7316,7 @@ export class GameApp extends Component {
         // 2.3 第一排：押注金额 & 锁定赔率
         const amountCard = this.wantedPosterBox(sheet, -145, 95, 270, 62, 6);
         this.text(amountCard, isEn ? "Wager Amount" : "押注本金", 0, 14, 12, WestColors.INK_MUTED);
-        this.text(amountCard, `${this.formatMoney(bet.betAmount)} 🪙`, 0, -10, 18, WestColors.INK_DARK);
+        this.text(amountCard, `${this.formatMoney(bet.betAmount)} 金币`, 0, -10, 18, WestColors.INK_DARK);
 
         const oddsCard = this.wantedPosterBox(sheet, 145, 95, 270, 62, 6);
         this.text(oddsCard, isEn ? "Locked Odds (Guaranteed)" : "锁定公证赔率 (保全)", 0, 14, 12, WestColors.INK_MUTED);
@@ -6295,20 +7359,20 @@ export class GameApp extends Component {
 
         const grossCard = this.wantedPosterBox(sheet, 145, 18, 270, 62, 6);
         this.text(grossCard, isEn ? "Gross Return" : "预期毛奖 (含本金)", 0, 14, 12, WestColors.INK_MUTED);
-        this.text(grossCard, `${this.formatMoney(bet.grossReward)} 🪙`, 0, -10, 17, WestColors.INK_DARK);
+        this.text(grossCard, `${this.formatMoney(bet.grossReward)} 金币`, 0, -10, 17, WestColors.INK_DARK);
 
         // 2.5 第三排：最终获胜净派彩金额金边大横幅（重点突出！）
         const netBanner = this.woodBox(sheet, 0, -70, 570, 78, 8, WestColors.LEATHER_SADDLE, WestColors.GOLD_BRIGHT);
         this.text(netBanner, isEn ? "👑 ESTIMATED NET WINNINGS (Net Bounty) 👑" : "👑 预期最终净获胜派彩金额 (NET WINNINGS) 👑", 0, 20, 12, WestColors.GOLD_BRIGHT);
-        this.text(netBanner, `+${this.formatMoney(bet.netReward)} 🪙`, 0, -7, 24, WestColors.GOLD_BRIGHT);
+        this.text(netBanner, `+${this.formatMoney(bet.netReward)} 金币`, 0, -7, 24, WestColors.GOLD_BRIGHT);
 
         // 2.6 规费扣除与公证防伪存根说明
         const feePercent = (Number(bet.feeRate) * 100).toFixed(1);
         this.text(
             sheet,
             isEn
-                ? `* Platform Rake: ${this.formatMoney(bet.feeAmount)} 🪙 (${feePercent}%) · Colt Federal Notary Stamped`
-                : `* 平台阶梯规费抽成已核扣: ${this.formatMoney(bet.feeAmount)} 🪙 (${feePercent}%) · 赛果公开公正`,
+                ? `* Platform Rake: ${this.formatMoney(bet.feeAmount)} 金币 (${feePercent}%) · Colt Federal Notary Stamped`
+                : `* 平台阶梯规费抽成已核扣: ${this.formatMoney(bet.feeAmount)} 金币 (${feePercent}%) · 赛果公开公正`,
             0,
             -135,
             11,
@@ -6333,8 +7397,7 @@ export class GameApp extends Component {
     /** 全屏 5~8 秒超级大奖彩金雨庆典弹窗 (Progressive Mega Jackpot Visuals) */
     private showMegaJackpotCelebration(dropAmount: number): void {
         const root = this.pageRoot ?? this.node;
-        const mask = this.box(root, 360, 640, 720, 1280, new Color(0, 0, 0, 235), 0);
-        mask.setSiblingIndex(9999);
+        const mask = this.createModalMask(root, new Color(0, 0, 0, 235));
 
         // 播放超燃庆典音频组合
         WestAudio.playRaceFinishFanfare("WIN");
@@ -6359,7 +7422,7 @@ export class GameApp extends Component {
         const chestCard = this.woodBox(grandModal, 0, 150, 600, 180, 12, WestColors.LEATHER_SADDLE, WestColors.GOLD_METALLIC);
         this.text(chestCard, "🎁 纯金宝箱破封迸发 · 璀璨彩金全场暴落 🎁", 0, 56, 17, WestColors.PARCHMENT_LIGHT);
 
-        const amountLabelNode = this.text(chestCard, `+${this.formatMoney(dropAmount)} 🪙`, 0, -8, 42, WestColors.GOLD_BRIGHT);
+        const amountLabelNode = this.text(chestCard, `+${this.formatMoney(dropAmount)} 金币`, 0, -8, 42, WestColors.GOLD_BRIGHT);
         tween(amountLabelNode.node)
             .repeatForever(
                 tween(amountLabelNode.node)
@@ -6422,19 +7485,16 @@ export class GameApp extends Component {
      * 消除 180s 下注期无事可做痛点，提供气候适性、马匹体重晨练走势、跑法剖析与稳健/爆冷两套策略推荐。
      */
     private showMorningChronicleModal(root: Node): void {
-        const mask = this.box(root, 360, 640, 720, 1280, new Color(0, 0, 0, 220), 0);
-        mask.setSiblingIndex(9999);
-        this.bindClick(mask, () => {
+        const mask = this.createModalMask(root, new Color(0, 0, 0, 220));
+        const closeModal = () => {
             WestAudio.playLeatherPress("COMMON");
             mask.destroy();
-        });
+        };
 
         WestAudio.playLeatherPress("COMMON");
         const modal = this.grandSaloonBox(mask, 0, 0, 680, 1000, 16, WestColors.WOOD_DARK, WestColors.BRASS_FRAME);
-        this.addModalCloseBtn(modal, 680, 1000, () => {
-            WestAudio.playLeatherPress("COMMON");
-            mask.destroy();
-        });
+        this.attachModalShield(mask, modal, closeModal);
+        this.addModalCloseBtn(modal, 680, 1000, closeModal);
 
         // 1. 报刊金字大标题
         const titleBox = this.chalkboardBox(modal, 0, 455, 640, 48, 6);
@@ -6539,14 +7599,13 @@ export class GameApp extends Component {
     /** 读取近期 8 期赛果冠军记录，供走势图使用。 */
     private async loadRecentHistory(): Promise<void> {
         try {
-            const res = await ApiClient.get<{ items: Array<{ winnerHorseNo: number | null; isSkipped?: boolean }> }>("/api/race/history?limit=8");
-            if (res.data?.items) {
-                this.recentWinners = res.data.items
-                    .filter((item) => !item.isSkipped && item.winnerHorseNo !== null && item.winnerHorseNo !== undefined)
-                    .map((item) => item.winnerHorseNo as number);
-            }
+            const res = await ApiClient.get<RaceHistoryResponseDto>("/api/race/history?limit=8");
+            const rawItems = res.data?.items ?? [];
+            this.recentWinners = rawItems
+                .filter((item: RaceHistoryItemDto) => !item.isSkipped && item.winnerHorseNo !== null && item.winnerHorseNo !== undefined)
+                .map((item: RaceHistoryItemDto) => item.winnerHorseNo as number);
         } catch {
-            // ignore network fail
+            this.recentWinners = [];
         }
     }
 
@@ -6565,8 +7624,10 @@ export class GameApp extends Component {
 
         // 2. 核心金库大卡片
         const balanceCard = this.woodBox(vaultBox, 0, 345, 660, 120, 10, WestColors.LEATHER_SADDLE, WestColors.GOLD_METALLIC);
-        this.text(balanceCard, "🪙 当前金库可用储备金", 0, 30, 16, WestColors.PARCHMENT_LIGHT);
-        this.text(balanceCard, `${this.formatMoney(this.player?.balance ?? 0)} 🪙`, 0, -10, 32, WestColors.GOLD_BRIGHT);
+        this.text(balanceCard, "💰 当前金库可用储备金", 0, 30, 16, WestColors.PARCHMENT_LIGHT);
+        const balStr = `${this.formatMoney(this.player?.balance ?? 0)} 金币`;
+        const balFontSize = balStr.length > 18 ? 22 : balStr.length > 13 ? 26 : 32;
+        this.text(balanceCard, balStr, 0, -10, balFontSize, WestColors.GOLD_BRIGHT);
 
         // 3. 快捷淘金充能 / 赏金提请按钮（通过 loadPlayer 触发服务端破产救济结算与余额同步）
         this.westernButton(
@@ -6582,7 +7643,7 @@ export class GameApp extends Component {
                         await this.loadPlayer();
                         const relief = this.player?.relief;
                         if (relief && relief.status === "GRANTED") {
-                            this.message = `🌾 破产救济金已发放到账: +${relief.amount} 🪙`;
+                            this.message = `🌾 破产救济金已发放到账: +${relief.amount} 金币`;
                         } else {
                             this.message = "金库余额已同步至最新链上状态";
                         }
@@ -6626,23 +7687,36 @@ export class GameApp extends Component {
                 }>;
             }>("/api/wallet/transactions?page=1&pageSize=6");
 
-            const items = txRes.data?.items ?? [];
+            type WalletTxItem = {
+                id: number;
+                transactionType: string;
+                amount: number;
+                balanceAfter: number;
+                referenceNo?: string;
+                createdAt?: string;
+            };
+            const items = this.safeArray<WalletTxItem>(txRes?.data?.items ?? (txRes?.data as unknown as WalletTxItem[]));
             if (items.length === 0) {
-                this.text(vaultBox, "暂无流水记录", 0, 40, 20, WestColors.TEXT_MUTED);
+                const emptyCard = this.wantedPosterBox(vaultBox, 0, -55, 660, 210, 8);
+                this.text(emptyCard, "📜 富国金库暂无近期收支账目", 0, 45, 20, WestColors.INK_DARK);
+                this.text(emptyCard, "参与边境赛马竞逐派彩、认领马房分红或前往杂货铺购置装备，", 0, 5, 14, WestColors.INK_MUTED);
+                this.text(emptyCard, "所有金币收支与结余流水均将全自动记入本金库账册！", 0, -25, 13, WestColors.INK_MUTED);
+                this.saloonButton(emptyCard, "🏇 前往德比竞逐下注 ➔", 0, -65, 240, 42, () => { void this.show("race"); }, true, 14);
             } else {
                 const txY = [120, 50, -20, -90, -160, -230];
                 items.slice(0, 6).forEach((tx, idx) => {
                     const y = txY[idx];
                     const isPlus = tx.amount >= 0;
                     const card = this.wantedPosterBox(vaultBox, 0, y, 660, 56, 6);
-                    const tag = isPlus ? `+${this.formatMoney(tx.amount)} 🪙` : `${this.formatMoney(tx.amount)} 🪙`;
+                    const tag = isPlus ? `+${this.formatMoney(tx.amount)} 金币` : `${this.formatMoney(tx.amount)} 金币`;
                     const color = isPlus ? WestColors.DESERT_SAGE : WestColors.BANDANA_RED;
                     this.text(card, `[${tx.transactionType}] ${tag}`, -140, 0, 16, color);
-                    this.text(card, `结余: ${this.formatMoney(tx.balanceAfter)} 🪙`, 160, 0, 15, WestColors.INK_DARK);
+                    this.text(card, `结余: ${this.formatMoney(tx.balanceAfter)} 金币`, 160, 0, 15, WestColors.INK_DARK);
                 });
             }
         } catch {
-            this.text(vaultBox, "加载流水失败", 0, 40, 20, WestColors.BANDANA_RED);
+            const errCard = this.wantedPosterBox(vaultBox, 0, -55, 660, 100, 8);
+            this.text(errCard, "⚠️ 金库流水明细加载失败，请检查网络后重试", 0, 0, 17, WestColors.BANDANA_RED);
         }
 
         // 5. 金库信用与公证背书卡（充实下半区空间，消除180px死寂荒原）
@@ -6673,20 +7747,20 @@ export class GameApp extends Component {
         );
     }
 
-    /** 构建结算结果页面 (名次名单 + 冠亚军与连赢荣誉卡片 + 牛仔兑奖小票) */
+    /** 构建结算结果页面 (名次名单 + 5大玩法模式胜利信息 + 牛仔兑奖小票) */
     private async buildResult(): Promise<void> {
         const root = this.pageRoot!;
         this.buildTopHud(root);
-        this.buildBottomNav(root, "battle");
+        // 注意：结算结果页不要添加 buildBottomNav，以避免底部导航栏压盖告示板下半区、截断点击与造成视觉冲突
 
-        // 1. 赛后名册大告示板
+        // 1. 赛后名册大告示板 (全屏无遮挡居中布局，适配手机端底部手势安全区)
         const isEn = I18n.getLocale() === "en-US";
-        const resultBox = this.grandSaloonBox(root, 360, 642, 696, 1030, 14, WestColors.WOOD_DARK, WestColors.BRASS_FRAME);
+        const resultBox = this.grandSaloonBox(root, 360, 630, 696, 1060, 14, WestColors.WOOD_DARK, WestColors.BRASS_FRAME);
 
         // 顶部黑板标题
-        const titleBox = this.chalkboardBox(resultBox, 0, 475, 660, 42, 6);
+        const titleBox = this.chalkboardBox(resultBox, 0, 480, 660, 40, 6);
         this.text(titleBox, isEn ? "🐎 AFTER-RACE REPORT · OFFICIAL DERBY 🐎" : "🐎 赛后结案赏金榜 · AFTER-RACE REPORT 🐎", 0, 0, isEn ? 18 : 20, WestColors.GOLD_BRIGHT);
-        this.text(resultBox, isEn ? "Issued by Wyoming Notary Office · Official Derby Ledger" : "怀俄明柯尔特特区公证署签发 · 边境赛况公证名册", 0, 436, isEn ? 12 : 14, WestColors.TEXT_PARCHMENT);
+        this.text(resultBox, isEn ? "Issued by Wyoming Notary Office · Official Derby Ledger" : "怀俄明柯尔特特区公证署签发 · 边境赛况公证名册", 0, 445, isEn ? 12 : 14, WestColors.TEXT_PARCHMENT);
 
         const roundId = this.resultRoundId > 0 ? this.resultRoundId : (this.round?.id ?? 0);
         if (roundId <= 0) {
@@ -6719,7 +7793,7 @@ export class GameApp extends Component {
 
             // 防御无人下注时跳过比赛的情况
             if (!response.data.winnerHorseNo || response.data.isSkipped || response.data.results.length === 0) {
-                const skipCard = this.wantedPosterBox(resultBox, 0, 350, 660, 76, 8);
+                const skipCard = this.wantedPosterBox(resultBox, 0, 320, 660, 76, 8);
                 this.text(
                     skipCard,
                     `⚠️ ${I18n.t("result.skipped")}`,
@@ -6732,76 +7806,16 @@ export class GameApp extends Component {
                 const rankResults = [...response.data.results].sort((a, b) => (a.rank ?? 99) - (b.rank ?? 99));
                 const rank1 = rankResults.find((r) => (r.rank ?? 0) === 1);
                 const rank2 = rankResults.find((r) => (r.rank ?? 0) === 2);
-                const winnerNo = rank1?.horseNo ?? response.data.winnerHorseNo;
-                const secondNo = rank2?.horseNo;
-                const quinellaCombo = (winnerNo && secondNo)
-                    ? `${Math.min(winnerNo, secondNo)}-${Math.max(winnerNo, secondNo)}`
-                    : null;
+                const rank3 = rankResults.find((r) => (r.rank ?? 0) === 3);
+                const winnerNo = rank1?.horseNo ?? response.data.winnerHorseNo ?? 1;
+                const secondNo = rank2?.horseNo ?? (winnerNo === 1 ? 2 : 1);
+                const thirdNo = rank3?.horseNo ?? (winnerNo !== 3 && secondNo !== 3 ? 3 : 4);
+                const quinellaCombo = `${Math.min(winnerNo, secondNo)}-${Math.max(winnerNo, secondNo)}`;
 
-                // 2. 冠亚军与连赢荣誉卡片 (红领巾缎带底色 + 镀金火漆印章)
-                const champCard = this.woodBox(resultBox, 0, 405, 660, 74, 12, WestColors.BANDANA_RED, WestColors.GOLD_METALLIC);
-
-                const sealCutout = new Node("ChampWaxSealCutout");
-                sealCutout.layer = champCard.layer || Layers.Enum.UI_2D;
-                champCard.addChild(sealCutout);
-                sealCutout.setPosition(-265, 0, 0);
-                sealCutout.addComponent(UITransform).setContentSize(64, 64);
-                applyWestTexture(sealCutout, WEST_TEXTURES.WAX_SEAL);
-
-                const comboSuffix = quinellaCombo
-                    ? (isEn ? ` · 🎰 Quinella: [${quinellaCombo}]` : ` · 🎰 连赢: [${quinellaCombo}]`)
-                    : "";
-                const champText = isEn
-                    ? `🏆 1st: No.${winnerNo} | 🥈 2nd: No.${secondNo ?? "-"}${comboSuffix}`
-                    : `🏆 冠: ${winnerNo}号 | 🥈 亚: ${secondNo ?? "-"}号${comboSuffix}`;
-                this.text(
-                    champCard,
-                    champText,
-                    25,
-                    12,
-                    isEn ? 20 : 23,
-                    WestColors.GOLD_BRIGHT,
-                );
-                this.text(
-                    champCard,
-                    "WESTERN HORSE RACE WINNER & QUINELLA EST. 1888",
-                    25,
-                    -14,
-                    13,
-                    WestColors.PARCHMENT_LIGHT,
-                );
-
-                // 3. 完赛位次名册 (前三甲勋章 + 4~6名紧凑名册)
-                const rank1Item = rankResults.find((r) => (r.rank ?? 0) === 1) ?? rankResults[0];
-                const rank2Item = rankResults.find((r) => (r.rank ?? 0) === 2) ?? rankResults[1];
-                const rank3Item = rankResults.find((r) => (r.rank ?? 0) === 3) ?? rankResults[2];
-
-                const top3 = [
-                    { medal: "🥇 冠军 1st", item: rank1Item, y: 310, bg: WestColors.LEATHER_SADDLE, border: WestColors.GOLD_METALLIC, color: WestColors.GOLD_BRIGHT },
-                    { medal: "🥈 亚军 2nd", item: rank2Item, y: 272, bg: WestColors.WOOD_DARK, border: WestColors.BRASS_FRAME, color: WestColors.PARCHMENT_LIGHT },
-                    { medal: "🥉 季军 3rd", item: rank3Item, y: 234, bg: WestColors.WOOD_DARK, border: WestColors.WOOD_FRAME, color: WestColors.TEXT_PARCHMENT },
-                ];
-
-                top3.forEach((t) => {
-                    if (!t.item) return;
-                    const rBox = this.woodBox(resultBox, 0, t.y, 660, 34, 6, t.bg, t.border);
-                    const darkTag = t.item.isBlackHorse ? ` ⚡[${I18n.t("result.blackHorse")}]` : "";
-                    const textStr = isEn
-                        ? `${t.medal}: No.${t.item.horseNo} Steed · Time: ${Number(t.item.finishTime ?? 0).toFixed(3)}s${darkTag}`
-                        : `${t.medal}: ${t.item.horseNo}号赛马 · 用时: ${Number(t.item.finishTime ?? 0).toFixed(3)}s${darkTag}`;
-                    this.text(rBox, textStr, 0, 0, isEn ? 14 : 15, t.color);
-                });
-
-                // 4 ~ 6 名紧凑条目
-                const others = rankResults.slice(3, 6);
-                if (others.length > 0) {
-                    const otherBox = this.box(resultBox, 0, 198, 660, 26, WestColors.WOOD_DARK, 4);
-                    const othersStr = others.map((o, idx) => {
-                        const r = o.rank ?? (idx + 4);
-                        return isEn ? `${r}th: No.${o.horseNo}` : `第${r}名: ${o.horseNo}号`;
-                    }).join("   |   ");
-                    this.text(otherBox, othersStr, 0, 0, 12, WestColors.TEXT_MUTED);
-                }
+                // 2. 各玩法模式官方获胜一览
+                this.buildResultOfficialOutcomes(resultBox, winnerNo, secondNo, thirdNo, quinellaCombo, isEn);
+                // 3. 完赛位次名册
+                this.buildResultTopRankings(resultBox, rankResults, isEn);
             }
 
             // 定向获取当前玩家在本轮的下注记录（支持多注单 Decision 1-C / 3-A）
@@ -6825,199 +7839,11 @@ export class GameApp extends Component {
             // 重新同步最新钱包余额
             await this.loadPlayer();
 
-            // 4. 牛仔兑奖小票卡片 (牛皮纸票根风格，严整展开5大模式全部明细)
-            const ticketCard = this.wantedPosterBox(resultBox, 0, -10, 660, 330, 8);
-            if (myOrders.length > 0) {
-                const rankResults = [...response.data.results].sort((a, b) => (a.rank ?? 99) - (b.rank ?? 99));
-                const rank1 = rankResults.find((r) => (r.rank ?? 0) === 1);
-                const rank2 = rankResults.find((r) => (r.rank ?? 0) === 2);
-                const rank3 = rankResults.find((r) => (r.rank ?? 0) === 3);
-                const actualWinner = rank1?.horseNo ?? response.data.winnerHorseNo;
-                const actualSecond = rank2?.horseNo;
-                const actualThird = rank3?.horseNo;
-                const actualQuinella = (actualWinner && actualSecond)
-                    ? `${Math.min(actualWinner, actualSecond)}-${Math.max(actualWinner, actualSecond)}`
-                    : null;
-                const actualTrifecta = (actualWinner && actualSecond && actualThird)
-                    ? `${actualWinner}-${actualSecond}-${actualThird}`
-                    : null;
+            // 4. 牛仔兑奖小票卡片 + 预测对比图 (#10)
+            this.buildResultTicketCard(resultBox, myOrders, response.data, isEn);
 
-                const hasBlackHorseInTop2 = Boolean(rank1?.isBlackHorse || rank2?.isBlackHorse);
-
-                // 准确判定 5 种模式独立输赢与结算明细
-                const evaluatedOrders = myOrders.map((order) => {
-                    const mode = (order.playType || "WIN").toUpperCase();
-                    let won = order.status === 2;
-                    let modeBadge = "[🏇 独赢]";
-                    let targetDesc = `${order.horseNo}号 独挑头马`;
-
-                    if (mode === "PLACE") {
-                        modeBadge = "[🛡️ 位置]";
-                        targetDesc = `${order.horseNo}号 稳入前二`;
-                        if (order.status === 1) {
-                            won = (order.horseNo === actualWinner || order.horseNo === actualSecond);
-                        }
-                    } else if (mode === "QUINELLA") {
-                        modeBadge = "[🎰 连赢]";
-                        const combo = order.combination ?? (order.secondHorseNo ? `${Math.min(order.horseNo, order.secondHorseNo)}-${Math.max(order.horseNo, order.secondHorseNo)}` : "");
-                        targetDesc = `组合[${combo}] 包揽前二`;
-                        if (order.status === 1) {
-                            won = Boolean(combo && actualQuinella && combo === actualQuinella);
-                        }
-                    } else if (mode === "EXACTA") {
-                        modeBadge = "[🎯 二连单]";
-                        const sH = order.secondHorseNo ?? (order.combination ? Number(order.combination.split("-")[1]) : 0);
-                        targetDesc = `严选 1st:${order.horseNo} ➔ 2nd:${sH}`;
-                        if (order.status === 1) {
-                            won = Boolean(actualWinner && actualSecond && order.horseNo === actualWinner && sH === actualSecond);
-                        }
-                    } else if (mode === "TRIFECTA") {
-                        modeBadge = "[👑 三重彩]";
-                        const parts = order.combination ? order.combination.split("-") : [];
-                        const h1 = order.horseNo;
-                        const h2 = order.secondHorseNo ?? (parts[1] ? Number(parts[1]) : 0);
-                        const h3 = parts[2] ? Number(parts[2]) : 0;
-                        targetDesc = `严选 1st:${h1} ➔ 2nd:${h2} ➔ 3rd:${h3}`;
-                        if (order.status === 1) {
-                            const orderTri = `${h1}-${h2}-${h3}`;
-                            won = Boolean(actualTrifecta && orderTri === actualTrifecta);
-                        }
-                    } else {
-                        // WIN
-                        modeBadge = "[🏇 独赢]";
-                        targetDesc = `${order.horseNo}号 单挑夺冠`;
-                        if (order.status === 1) {
-                            won = Boolean(actualWinner && order.horseNo === actualWinner);
-                        }
-                    }
-
-                    const isJackpot = won && (mode === "QUINELLA") && (hasBlackHorseInTop2 || order.statusReason === "WIN_JACKPOT");
-                    const odds = Number(order.lockedOdds || 0);
-                    const netPayout = won
-                        ? (order.netReward > 0 ? order.netReward : Math.max(0, Math.round(order.betAmount * odds * 0.96 * 100) / 100))
-                        : 0;
-
-                    return { order, mode, modeBadge, targetDesc, won, isJackpot, odds, netPayout };
-                });
-
-                const wonOrders = evaluatedOrders.filter((r) => r.won);
-                const isAnyWon = wonOrders.length > 0;
-                const totalBet = myOrders.reduce((sum, o) => sum + o.betAmount, 0);
-                const totalNet = wonOrders.reduce((sum, r) => sum + r.netPayout, 0);
-
-                if (isAnyWon) {
-                    WestAudio.playGoldCascade("COMMON");
-                    WestAudio.speakCowboy("win", "COMMON");
-                    this.spawnGoldFoilParticles(resultBox);
-                    this.shakeScreen(240, 5);
-
-                    // 顶部彩头横幅
-                    const winBanner = this.woodBox(ticketCard, 0, 134, 620, 32, 6, WestColors.SEAL_RED, WestColors.BRASS_HIGHLIGHT);
-                    this.text(winBanner, `🎉 🏆 押中赏金！总下注: ${this.formatMoney(totalBet)} 🪙 | 净派彩: +${this.formatMoney(totalNet)} 🪙 (${wonOrders.length}/${myOrders.length}注命中) 🏆 🎉`, 0, 0, isEn ? 13 : 14, WestColors.GOLD_BRIGHT);
-
-                    // 鲜红火漆印章
-                    const claimSeal = new Node("ClaimWaxSeal");
-                    claimSeal.layer = ticketCard.layer || Layers.Enum.UI_2D;
-                    ticketCard.addChild(claimSeal);
-                    claimSeal.setPosition(260, 20, 0);
-                    claimSeal.addComponent(UITransform).setContentSize(52, 52);
-                    WestStyle.drawWaxSealStamp(claimSeal, 24);
-                    WestMotion.playWaxStamp(claimSeal);
-                } else {
-                    const failMode = this.getAudioMode();
-                    WestAudio.playMutedGuitar(failMode);
-                    WestAudio.playHorseSnort(failMode);
-                    WestAudio.speakCowboy("lose", failMode);
-
-                    const loseBanner = this.woodBox(ticketCard, 0, 134, 620, 32, 6, WestColors.WOOD_DARK, WestColors.WOOD_FRAME);
-                    this.text(loseBanner, `🌵 本轮共投 ${myOrders.length} 笔未中 · 胜败乃牛仔常事 (总下注: ${this.formatMoney(totalBet)} 🪙) 🌵`, 0, 0, isEn ? 13 : 14, WestColors.TEXT_PARCHMENT);
-                }
-
-                // 逐笔条目化展示（不截断、不缩略，5 种玩法模式标识分明）
-                const displayOrders = evaluatedOrders.slice(0, 5);
-                const rowYs = [95, 55, 15, -25, -65];
-
-                displayOrders.forEach((item, idx) => {
-                    const y = rowYs[idx];
-                    const rowBox = this.woodBox(ticketCard, 0, y, 620, 32, 6, item.won ? WestColors.WOOD_DARK : WestColors.LEATHER_DARK, item.won ? WestColors.GOLD_METALLIC : WestColors.WOOD_FRAME);
-
-                    // 左侧：模式勋章 + 下注目标
-                    this.text(rowBox, `${item.modeBadge} ${item.targetDesc}`, -170, 0, 12, item.won ? WestColors.GOLD_BRIGHT : WestColors.TEXT_PARCHMENT, HorizontalTextAlignment.LEFT);
-
-                    // 中间：下注金币与锁定赔率
-                    this.text(rowBox, `本金:${item.order.betAmount}🪙 · x${item.odds.toFixed(1)}`, 40, 0, 11, WestColors.PARCHMENT_LIGHT, HorizontalTextAlignment.CENTER);
-
-                    // 右侧：输赢状态与净入账
-                    const statusStr = item.won
-                        ? `+${this.formatMoney(item.netPayout)}🪙 ✅ 命中`
-                        : `-${this.formatMoney(item.order.betAmount)}🪙 ❌ 未中`;
-                    const statusColor = item.won ? WestColors.GOLD_BRIGHT : WestColors.TEXT_MUTED;
-                    this.text(rowBox, statusStr, 220, 0, 12, statusColor, HorizontalTextAlignment.RIGHT);
-                });
-
-                if (evaluatedOrders.length > 5) {
-                    this.text(ticketCard, `... 其余 ${evaluatedOrders.length - 5} 笔注单明细请在下方【我的注单】全量查阅`, 0, -95, 11, WestColors.INK_MUTED);
-                }
-
-                // 底部金库状态条
-                this.text(
-                    ticketCard,
-                    isEn
-                        ? `Vault Balance: ${this.formatMoney(this.player?.balance ?? 0)} 🪙 | Streak: ${this.player?.currentHitStreak ?? 0}W`
-                        : `当前金库结余: ${this.formatMoney(this.player?.balance ?? 0)} 🪙  |  🎯 命中连胜: ${this.player?.currentHitStreak ?? 0}  |  💰 盈利胜局: ${this.player?.totalNetProfitWins ?? 0}`,
-                    0,
-                    -125,
-                    isEn ? 11 : 12,
-                    WestColors.INK_DARK,
-                );
-            } else {
-                this.text(
-                    ticketCard,
-                    isEn ? "🤠 Spectator Mode · Frontier Derby Observed" : "🤠 本轮未押注 · 观摩边境赛况",
-                    0,
-                    20,
-                    isEn ? 17 : 18,
-                    WestColors.INK_DARK,
-                );
-                this.text(
-                    ticketCard,
-                    isEn ? "Next shootout starts soon. Pick your champion and saddle up!" : "下轮大乱斗即将打响，挑选心仪名驹撕票入场！",
-                    0,
-                    -12,
-                    isEn ? 13 : 14,
-                    WestColors.INK_MUTED,
-                );
-                this.text(
-                    ticketCard,
-                    isEn ? `🎯 Hit Streak: ${this.player?.currentHitStreak ?? 0} (Best: ${this.player?.maxHitStreak ?? 0}) | 💰 Profit Wins: ${this.player?.totalNetProfitWins ?? 0}` : `🎯 命中连胜: ${this.player?.currentHitStreak ?? 0} (最高: ${this.player?.maxHitStreak ?? 0})  |  💰 净盈利胜局: ${this.player?.totalNetProfitWins ?? 0}胜 (当前盈利连胜: ${this.player?.currentProfitStreak ?? 0})`,
-                    0,
-                    -40,
-                    isEn ? 11 : 12,
-                    WestColors.SEAL_RED,
-                );
-            }
-
-            // 5. 赛果公允性透明核验按钮 (Provably Fair)
-            if (response.data.resultSeedCommitment) {
-                this.saloonButton(
-                    resultBox,
-                    `🔍 ${I18n.t("fairness.verifyBtn")} (PROVABLY FAIR)`,
-                    0,
-                    -165,
-                    480,
-                    44,
-                    () => {
-                        void this.buildFairnessModal(
-                            root,
-                            response.data.resultSeed ?? "",
-                            response.data.resultSeedCommitment ?? "",
-                            response.data.resultAlgorithmVersion ?? "ResultEngine-V1.2",
-                        );
-                    },
-                    false,
-                    15,
-                );
-            }
+            // 5. 公平性核验与底部行动栏
+            this.buildResultActions(resultBox, root, response.data, isEn);
         } catch {
             this.text(
                 resultBox,
@@ -7028,15 +7854,439 @@ export class GameApp extends Component {
                 WestColors.BANDANA_RED,
             );
         }
+    }
 
-        // 6. 底部双行动招牌按钮 (消除底部 240px 空白)
+    /** 结算页：2. 各玩法模式官方获胜一览 (#7 拆解子方法) */
+    private buildResultOfficialOutcomes(
+        resultBox: Node,
+        winnerNo: number,
+        secondNo: number,
+        thirdNo: number,
+        quinellaCombo: string,
+        isEn: boolean,
+    ): void {
+        const outcomeBoard = this.woodBox(resultBox, 0, 368, 660, 130, 10, WestColors.WOOD_DARK, WestColors.GOLD_METALLIC);
+
+        this.text(
+            outcomeBoard,
+            isEn
+                ? "🏆 OFFICIAL WINNING COMBOS BY BETTING MODE 🏆"
+                : `🏆 ${I18n.t("result.winningOutcomes", "各玩法模式官方获胜一览")} 🏆`,
+            0,
+            46,
+            14,
+            WestColors.GOLD_BRIGHT,
+        );
+
+        // 1) 独赢
+        const winBox = this.box(outcomeBoard, -216, 10, 204, 44, WestColors.WOOD_MEDIUM, 6);
+        this.text(winBox, isEn ? "🏇 [WIN]" : "🏇 [独赢·单挑]", 0, 11, 12, WestColors.GOLD_BRIGHT);
+        this.text(winBox, isEn ? `1st: No.${winnerNo}` : `冠军: ${winnerNo}号赛马`, 0, -9, 13, WestColors.PARCHMENT_LIGHT);
+
+        // 2) 位置
+        const placeBox = this.box(outcomeBoard, 0, 10, 212, 44, WestColors.WOOD_MEDIUM, 6);
+        this.text(placeBox, isEn ? "🛡️ [PLACE]" : "🛡️ [位置·保底]", 0, 11, 12, WestColors.GOLD_BRIGHT);
+        this.text(placeBox, isEn ? `Top 2: #${winnerNo}, #${secondNo}` : `前二: ${winnerNo}号、${secondNo}号`, 0, -9, 13, WestColors.PARCHMENT_LIGHT);
+
+        // 3) 连赢
+        const quinBox = this.box(outcomeBoard, 216, 10, 204, 44, WestColors.WOOD_MEDIUM, 6);
+        this.text(quinBox, isEn ? "🎰 [QUINELLA]" : "🎰 [连赢·包揽]", 0, 11, 12, WestColors.GOLD_BRIGHT);
+        this.text(quinBox, isEn ? `Combo: [${quinellaCombo}]` : `组合: [${quinellaCombo}]`, 0, -9, 13, WestColors.PARCHMENT_LIGHT);
+
+        // 4) 二连单
+        const exactaBox = this.box(outcomeBoard, -162, -38, 314, 42, WestColors.WOOD_MEDIUM, 6);
+        this.text(exactaBox, isEn ? "🎯 [EXACTA 冠亚严选]" : "🎯 [二连单·精准顺序]", -80, 0, 12, WestColors.GOLD_BRIGHT);
+        this.text(exactaBox, isEn ? `1st:${winnerNo} ➔ 2nd:${secondNo}` : `1st: ${winnerNo}号 ➔ 2nd: ${secondNo}号`, 52, 0, 12, WestColors.PARCHMENT_LIGHT);
+
+        // 5) 三重彩
+        const trifectaBox = this.box(outcomeBoard, 162, -38, 314, 42, WestColors.WOOD_MEDIUM, 6);
+        this.text(trifectaBox, isEn ? "👑 [TRIFECTA 前三严选]" : "👑 [三重彩·严选前三]", -74, 0, 12, WestColors.GOLD_BRIGHT);
+        this.text(trifectaBox, isEn ? `${winnerNo} ➔ ${secondNo} ➔ ${thirdNo}` : `${winnerNo} ➔ ${secondNo} ➔ ${thirdNo}号`, 56, 0, 12, WestColors.PARCHMENT_LIGHT);
+    }
+
+    /** 结算页：3. 完赛位次名册与冠亚季军荣誉领奖台 (Western Grand Derby Victory Podium) */
+    private buildResultTopRankings(
+        resultBox: Node,
+        rankResults: Array<{ horseNo: number; rank: number | null; finishTime: number | null; isBlackHorse: boolean }>,
+        isEn: boolean,
+    ): void {
+        const rank1Item = rankResults.find((r) => (r.rank ?? 0) === 1) ?? rankResults[0];
+        const rank2Item = rankResults.find((r) => (r.rank ?? 0) === 2) ?? rankResults[1];
+        const rank3Item = rankResults.find((r) => (r.rank ?? 0) === 3) ?? rankResults[2];
+
+        // 构建西式立体三阶荣誉领奖台 (Grand Stepped Podium)
+        const podiumRoot = new Node("VictoryPodium");
+        podiumRoot.layer = resultBox.layer || Layers.Enum.UI_2D;
+        resultBox.addChild(podiumRoot);
+        podiumRoot.setPosition(0, 246, 0);
+
+        const pg = podiumRoot.addComponent(Graphics);
+        // 领奖台阴影底座
+        pg.fillColor = new Color(20, 16, 12, 160);
+        pg.roundRect(-290, -32, 580, 14, 6);
+        pg.fill();
+
+        // 2号台 (亚军·左侧 Step 2): 宽 150, 高 36, 顶面在 Y = 11
+        pg.fillColor = WestColors.WOOD_MEDIUM;
+        pg.roundRect(-260, -25, 150, 36, 4);
+        pg.fill();
+        pg.strokeColor = WestColors.BRASS_FRAME;
+        pg.lineWidth = 1.6;
+        pg.roundRect(-260, -25, 150, 36, 4);
+        pg.stroke();
+
+        // 1号台 (冠军·中央 Step 1 高峰): 宽 190, 高 52, 顶面在 Y = 27
+        pg.fillColor = WestColors.LEATHER_SADDLE;
+        pg.roundRect(-95, -25, 190, 52, 6);
+        pg.fill();
+        pg.strokeColor = WestColors.GOLD_METALLIC;
+        pg.lineWidth = 2.2;
+        pg.roundRect(-95, -25, 190, 52, 6);
+        pg.stroke();
+
+        // 3号台 (季军·右侧 Step 3): 宽 150, 高 24, 顶面在 Y = -1
+        pg.fillColor = WestColors.WOOD_DARK;
+        pg.roundRect(110, -25, 150, 24, 4);
+        pg.fill();
+        pg.strokeColor = WestColors.WOOD_FRAME;
+        pg.lineWidth = 1.4;
+        pg.roundRect(110, -25, 150, 24, 4);
+        pg.stroke();
+
+        // 台阶立面金属大序号 (2, 1, 3)
+        this.text(podiumRoot, "2", -185, -12, 18, WestColors.PARCHMENT_LIGHT);
+        this.text(podiumRoot, "1", 0, -5, 24, WestColors.GOLD_BRIGHT);
+        this.text(podiumRoot, "3", 185, -16, 16, WestColors.TEXT_MUTED);
+
+        // 冠军战驹站台 (Center Podium Step 1)
+        if (rank1Item) {
+            const h1Box = new Node("PodiumStep1_Champion");
+            h1Box.layer = podiumRoot.layer;
+            podiumRoot.addChild(h1Box);
+            h1Box.setPosition(0, 48, 0);
+
+            // 胜利花环桂冠
+            this.text(h1Box, "🌿 🏆 🌿", 0, 18, 16);
+            const time1 = Number(rank1Item.finishTime ?? 0).toFixed(3);
+            const dark1 = rank1Item.isBlackHorse ? " ⚡爆冷" : "";
+            this.text(h1Box, `🥇 冠军 No.${rank1Item.horseNo}${dark1}`, 0, -2, 14, WestColors.GOLD_BRIGHT);
+            this.text(h1Box, `${time1}s`, 0, -18, 12, WestColors.CHALK_YELLOW);
+        }
+
+        // 亚军战驹站台 (Left Podium Step 2)
+        if (rank2Item) {
+            const h2Box = new Node("PodiumStep2_RunnerUp");
+            h2Box.layer = podiumRoot.layer;
+            podiumRoot.addChild(h2Box);
+            h2Box.setPosition(-185, 30, 0);
+
+            const time2 = Number(rank2Item.finishTime ?? 0).toFixed(3);
+            this.text(h2Box, "🥈 亚军", 0, 12, 12, WestColors.PARCHMENT_LIGHT);
+            this.text(h2Box, `No.${rank2Item.horseNo} · ${time2}s`, 0, -8, 12, WestColors.TEXT_PARCHMENT);
+        }
+
+        // 季军战驹站台 (Right Podium Step 3)
+        if (rank3Item) {
+            const h3Box = new Node("PodiumStep3_Third");
+            h3Box.layer = podiumRoot.layer;
+            podiumRoot.addChild(h3Box);
+            h3Box.setPosition(185, 18, 0);
+
+            const time3 = Number(rank3Item.finishTime ?? 0).toFixed(3);
+            this.text(h3Box, "🥉 季军", 0, 12, 12, WestColors.TEXT_PARCHMENT);
+            this.text(h3Box, `No.${rank3Item.horseNo} · ${time3}s`, 0, -8, 12, WestColors.TEXT_MUTED);
+        }
+
+        // 第 4-6 名完赛位次条
+        const others = rankResults.slice(3, 6);
+        if (others.length > 0) {
+            const otherBox = this.box(resultBox, 0, 178, 660, 24, WestColors.WOOD_DARK, 4);
+            const othersStr = others.map((o, idx) => {
+                const r = o.rank ?? (idx + 4);
+                return isEn ? `${r}th: No.${o.horseNo}` : `第${r}名: ${o.horseNo}号`;
+            }).join("   |   ");
+            this.text(otherBox, othersStr, 0, 0, 11, WestColors.TEXT_MUTED);
+        }
+    }
+
+    /** 结算页：预测 vs 实际 可视化对比条形卡片 (#10) */
+    private buildResultPredictionComparison(
+        parent: Node,
+        orders: BetOrderItemDto[],
+        rankResults: Array<{ horseNo: number; rank: number | null; finishTime: number | null }>,
+        isEn: boolean,
+    ): void {
+        if (!orders || orders.length === 0) return;
+
+        const compareBox = this.wantedPosterBox(parent, 0, -88, 624, 46, 6);
+        const primaryOrder = orders[0];
+        const hNo = primaryOrder.horseNo;
+        const actualRankItem = rankResults.find((r) => r.horseNo === hNo);
+        const actualRank = actualRankItem?.rank ?? 6;
+        const winnerItem = rankResults.find((r) => (r.rank ?? 0) === 1);
+        const gapTime = (actualRankItem?.finishTime && winnerItem?.finishTime)
+            ? Math.max(0, actualRankItem.finishTime - winnerItem.finishTime)
+            : 0;
+
+        const isExactWin = actualRank === 1;
+        const resultSummary = isExactWin
+            ? (isEn ? `🎯 Predict: #${hNo} ➔ 1st ✅ PERFECT HIT` : `🎯 预测: ${hNo}号马 ➔ 实际: 第1名 夺冠 ✅`)
+            : (isEn ? `🎯 Predict: #${hNo} ➔ Finished ${actualRank}th (+${gapTime.toFixed(3)}s)` : `🎯 预测: ${hNo}号马 ➔ 实际: 第${actualRank}名 (差距: +${gapTime.toFixed(2)}s)`);
+
+        this.text(
+            compareBox,
+            resultSummary,
+            -130,
+            0,
+            12,
+            isExactWin ? WestColors.DESERT_SAGE : WestColors.SEAL_RED,
+            HorizontalTextAlignment.LEFT,
+        );
+
+        // 右侧微型赛道截面标尺
+        const trackGauge = this.box(compareBox, 200, 0, 160, 20, WestColors.WOOD_DARK, 4);
+        const gaugeG = trackGauge.getComponent(Graphics);
+        if (gaugeG) {
+            gaugeG.fillColor = isExactWin ? WestColors.GOLD_BRIGHT : WestColors.BANDANA_RED;
+            const markerX = -70 + ((actualRank - 1) / 5) * 140;
+            gaugeG.circle(markerX, 0, 5);
+            gaugeG.fill();
+        }
+        this.text(trackGauge, isEn ? `Rank: ${actualRank}/6` : `实际: 第${actualRank}名`, 0, 0, 10, WestColors.PARCHMENT_LIGHT);
+    }
+
+    /** 结算页：4. 牛仔兑奖小票卡片 + 预测对比 (#7 拆解子方法 & #10) */
+    private buildResultTicketCard(
+        resultBox: Node,
+        myOrders: BetOrderItemDto[],
+        responseData: {
+            winnerHorseNo: number | null;
+            results: Array<{
+                horseNo: number;
+                rank: number | null;
+                finishTime: number | null;
+                isBlackHorse: boolean;
+            }>;
+        },
+        isEn: boolean,
+    ): void {
+        const ticketCard = this.wantedPosterBox(resultBox, 0, -6, 660, 340, 8);
+        const rankResults = [...responseData.results].sort((a, b) => (a.rank ?? 99) - (b.rank ?? 99));
+
+        if (myOrders.length > 0) {
+            const rank1 = rankResults.find((r) => (r.rank ?? 0) === 1);
+            const rank2 = rankResults.find((r) => (r.rank ?? 0) === 2);
+            const rank3 = rankResults.find((r) => (r.rank ?? 0) === 3);
+            const actualWinner = rank1?.horseNo ?? responseData.winnerHorseNo ?? 1;
+            const actualSecond = rank2?.horseNo ?? (actualWinner === 1 ? 2 : 1);
+            const actualThird = rank3?.horseNo ?? (actualWinner !== 3 && actualSecond !== 3 ? 3 : 4);
+            const actualQuinella = `${Math.min(actualWinner, actualSecond)}-${Math.max(actualWinner, actualSecond)}`;
+            const actualTrifecta = `${actualWinner}-${actualSecond}-${actualThird}`;
+
+            const hasBlackHorseInTop2 = Boolean(rank1?.isBlackHorse || rank2?.isBlackHorse);
+
+            const evaluatedOrders = myOrders.map((order) => {
+                const mode = (order.playType || "WIN").toUpperCase();
+                let won = order.status === 2;
+                let modeBadge = "[🏇 独赢]";
+                let targetDesc = `${order.horseNo}号`;
+                let winDesc = `${actualWinner}号`;
+
+                if (mode === "PLACE") {
+                    modeBadge = "[🛡️ 位置]";
+                    targetDesc = `${order.horseNo}号`;
+                    winDesc = `${actualWinner}号、${actualSecond}号`;
+                    if (order.status === 1) {
+                        won = (order.horseNo === actualWinner || order.horseNo === actualSecond);
+                    }
+                } else if (mode === "QUINELLA") {
+                    modeBadge = "[🎰 连赢]";
+                    const combo = order.combination ?? (order.secondHorseNo ? `${Math.min(order.horseNo, order.secondHorseNo)}-${Math.max(order.horseNo, order.secondHorseNo)}` : "");
+                    targetDesc = `[${combo}]`;
+                    winDesc = `[${actualQuinella}]`;
+                    if (order.status === 1) {
+                        won = Boolean(combo && combo === actualQuinella);
+                    }
+                } else if (mode === "EXACTA") {
+                    modeBadge = "[🎯 二连单]";
+                    const sH = order.secondHorseNo ?? (order.combination ? Number(order.combination.split("-")[1]) : 0);
+                    targetDesc = `${order.horseNo} ➔ ${sH}`;
+                    winDesc = `${actualWinner} ➔ ${actualSecond}`;
+                    if (order.status === 1) {
+                        won = Boolean(order.horseNo === actualWinner && sH === actualSecond);
+                    }
+                } else if (mode === "TRIFECTA") {
+                    modeBadge = "[👑 三重彩]";
+                    const parts = order.combination ? order.combination.split("-") : [];
+                    const h1 = order.horseNo;
+                    const h2 = order.secondHorseNo ?? (parts[1] ? Number(parts[1]) : 0);
+                    const h3 = order.thirdHorseNo ?? (parts[2] ? Number(parts[2]) : 0);
+                    targetDesc = `${h1} ➔ ${h2} ➔ ${h3}`;
+                    winDesc = `${actualWinner} ➔ ${actualSecond} ➔ ${actualThird}`;
+                    if (order.status === 1) {
+                        const orderTri = `${h1}-${h2}-${h3}`;
+                        won = Boolean(orderTri === actualTrifecta);
+                    }
+                } else {
+                    modeBadge = "[🏇 独赢]";
+                    targetDesc = `${order.horseNo}号`;
+                    winDesc = `${actualWinner}号`;
+                    if (order.status === 1) {
+                        won = Boolean(order.horseNo === actualWinner);
+                    }
+                }
+
+                const isJackpot = won && (mode === "QUINELLA") && (hasBlackHorseInTop2 || order.statusReason === "WIN_JACKPOT");
+                const odds = Number(order.lockedOdds || 0);
+                const netPayout = won
+                    ? (order.netReward > 0 ? order.netReward : Math.max(0, Math.round(order.betAmount * odds * 0.96 * 100) / 100))
+                    : 0;
+
+                return { order, mode, modeBadge, targetDesc, winDesc, won, isJackpot, odds, netPayout };
+            });
+
+            const wonOrders = evaluatedOrders.filter((r) => r.won);
+            const isAnyWon = wonOrders.length > 0;
+            const totalBet = myOrders.reduce((sum, o) => sum + o.betAmount, 0);
+            const totalNet = wonOrders.reduce((sum, r) => sum + r.netPayout, 0);
+
+            if (isAnyWon) {
+                WestAudio.playGoldCascade("COMMON");
+                WestAudio.speakCowboy("win", "COMMON");
+                this.spawnGoldFoilParticles(resultBox);
+                this.shakeScreen(240, 5);
+
+                const winBanner = this.woodBox(ticketCard, 0, 144, 624, 30, 6, WestColors.SEAL_RED, WestColors.BRASS_HIGHLIGHT);
+                this.text(winBanner, `🎉 🏆 押中赏金！总下注: ${this.formatMoney(totalBet)} 金币 | 净派彩: +${this.formatMoney(totalNet)} 金币 (${wonOrders.length}/${myOrders.length}注命中) 🏆 🎉`, 0, 0, isEn ? 13 : 14, WestColors.GOLD_BRIGHT);
+
+                const claimSeal = new Node("ClaimWaxSeal");
+                claimSeal.layer = ticketCard.layer || Layers.Enum.UI_2D;
+                ticketCard.addChild(claimSeal);
+                claimSeal.setPosition(268, 24, 0);
+                claimSeal.addComponent(UITransform).setContentSize(52, 52);
+                WestStyle.drawWaxSealStamp(claimSeal, 24);
+                WestMotion.playWaxStamp(claimSeal);
+
+                setTimeout(() => {
+                    if (ticketCard && ticketCard.isValid) {
+                        this.spawnCoinFlyToBalance(ticketCard, Math.min(14, 4 + wonOrders.length * 2));
+                    }
+                }, 300);
+            } else {
+                const failMode = this.getAudioMode();
+                WestAudio.playMutedGuitar(failMode);
+                WestAudio.playHorseSnort(failMode);
+                WestAudio.speakCowboy("lose", failMode);
+
+                const loseBanner = this.woodBox(ticketCard, 0, 144, 624, 30, 6, WestColors.WOOD_DARK, WestColors.WOOD_FRAME);
+                this.text(loseBanner, `🌵 本轮共投 ${myOrders.length} 笔未中 · 胜败乃牛仔常事 (总下注: ${this.formatMoney(totalBet)} 金币) 🌵`, 0, 0, isEn ? 13 : 14, WestColors.TEXT_PARCHMENT);
+            }
+
+            // 逐笔条目化展示（最多展示 3 笔，留出下方空间展示预测对比图 #10）
+            const displayOrders = evaluatedOrders.slice(0, 3);
+            const rowYs = [106, 68, 30];
+
+            displayOrders.forEach((item, idx) => {
+                const y = rowYs[idx];
+                const rowBox = this.woodBox(ticketCard, 0, y, 624, 32, 6, item.won ? WestColors.WOOD_DARK : WestColors.LEATHER_DARK, item.won ? WestColors.GOLD_METALLIC : WestColors.WOOD_FRAME);
+
+                const wTag = I18n.t("result.targetWager", "投:");
+                const aTag = I18n.t("result.actualWin", "开:");
+                const matchText = `${item.modeBadge} ${wTag}${item.targetDesc} ➔ ${aTag}${item.winDesc}`;
+                this.text(rowBox, matchText, -170, 0, 12, item.won ? WestColors.GOLD_BRIGHT : WestColors.TEXT_PARCHMENT, HorizontalTextAlignment.LEFT);
+
+                this.text(rowBox, `${item.order.betAmount} 金币·x${item.odds.toFixed(1)}`, 75, 0, 11, WestColors.PARCHMENT_LIGHT, HorizontalTextAlignment.CENTER);
+
+                const statusStr = item.won
+                    ? `+${this.formatMoney(item.netPayout)} 金币 ✅`
+                    : `-${this.formatMoney(item.order.betAmount)} 金币 ❌`;
+                const statusColor = item.won ? WestColors.GOLD_BRIGHT : WestColors.TEXT_MUTED;
+                this.text(rowBox, statusStr, 240, 0, 12, statusColor, HorizontalTextAlignment.RIGHT);
+            });
+
+            // 插入「预测 vs 实际」可视化对比条形卡片 (#10)
+            this.buildResultPredictionComparison(ticketCard, myOrders, rankResults, isEn);
+
+            // 底部金库状态条
+            this.text(
+                ticketCard,
+                isEn
+                    ? `Vault Balance: ${this.formatMoney(this.player?.balance ?? 0)} 金币 | Streak: ${this.player?.currentHitStreak ?? 0}W`
+                    : `当前金库结余: ${this.formatMoney(this.player?.balance ?? 0)} 金币  |  🎯 命中连胜: ${this.player?.currentHitStreak ?? 0}  |  💰 盈利胜局: ${this.player?.totalNetProfitWins ?? 0}`,
+                0,
+                -140,
+                isEn ? 11 : 12,
+                WestColors.INK_DARK,
+            );
+        } else {
+            this.text(
+                ticketCard,
+                isEn ? "🤠 Spectator Mode · Frontier Derby Observed" : "🤠 本轮未押注 · 观摩边境赛况",
+                0,
+                20,
+                isEn ? 17 : 18,
+                WestColors.INK_DARK,
+            );
+            this.text(
+                ticketCard,
+                isEn ? "Next shootout starts soon. Pick your champion and saddle up!" : "下轮大乱斗即将打响，挑选心仪名驹撕票入场！",
+                0,
+                -12,
+                isEn ? 13 : 14,
+                WestColors.INK_MUTED,
+            );
+            this.text(
+                ticketCard,
+                isEn ? `🎯 Hit Streak: ${this.player?.currentHitStreak ?? 0} (Best: ${this.player?.maxHitStreak ?? 0}) | 💰 Profit Wins: ${this.player?.totalNetProfitWins ?? 0}` : `🎯 命中连胜: ${this.player?.currentHitStreak ?? 0} (最高: ${this.player?.maxHitStreak ?? 0})  |  💰 净盈利胜局: ${this.player?.totalNetProfitWins ?? 0}胜 (当前盈利连胜: ${this.player?.currentProfitStreak ?? 0})`,
+                0,
+                -40,
+                isEn ? 11 : 12,
+                WestColors.SEAL_RED,
+            );
+        }
+    }
+
+    /** 结算页：5. 公平性核验与底部行动栏 (#7 拆解子方法) */
+    private buildResultActions(
+        resultBox: Node,
+        root: Node,
+        responseData: {
+            resultSeed?: string | null;
+            resultSeedCommitment?: string | null;
+            resultAlgorithmVersion?: string | null;
+        },
+        isEn: boolean,
+    ): void {
+        // 赛果公允性透明核验按钮 (Provably Fair)
+        if (responseData.resultSeedCommitment) {
+            this.saloonButton(
+                resultBox,
+                `${I18n.t("fairness.verifyBtn")} (PROVABLY FAIR)`,
+                0,
+                -205,
+                480,
+                38,
+                () => {
+                    void this.buildFairnessModal(
+                        root,
+                        responseData.resultSeed ?? "",
+                        responseData.resultSeedCommitment ?? "",
+                        responseData.resultAlgorithmVersion ?? "ResultEngine-V1.2",
+                    );
+                },
+                false,
+                15,
+            );
+        }
+
+        // 底部双行动招牌按钮 (再战一轮 + 返回大厅)
         const rematchBtn = this.westernButton(
             resultBox,
-            isEn ? "🏇 Next Round (RACE)" : `🏇 ${I18n.t("race.startRace")} (NEXT ROUND)`,
+            isEn ? "🏇 Next Round (RACE)" : `🏇 ${I18n.t("race.startRace", "再战一轮")} (NEXT ROUND)`,
             -165,
-            -245,
+            -262,
             310,
-            54,
+            48,
             () => {
                 void this.show("race");
             },
@@ -7057,9 +8307,9 @@ export class GameApp extends Component {
             resultBox,
             isEn ? "🐎 Back to Lobby" : `🐎 ${I18n.t("common.backLobby")} (RETURN)`,
             165,
-            -245,
+            -262,
             310,
-            54,
+            48,
             () => {
                 void this.show("lobby");
             },
@@ -7067,19 +8317,19 @@ export class GameApp extends Component {
             isEn ? 16 : 18,
         );
 
-        // 7. 个人生涯赛后概览卡（充实下半区空间，消除193px死寂荒原）
-        const recapBox = this.wantedPosterBox(resultBox, 0, -340, 660, 74, 8);
+        // 个人生涯赛后概览卡
+        const recapBox = this.wantedPosterBox(resultBox, 0, -344, 660, 64, 8);
         const winRateStr = (Number(this.player?.winRate ?? 0) * 100).toFixed(1);
-        this.text(recapBox, `📊 个人竞技生涯概览: 胜率 ${winRateStr}%  |  出战 ${this.player?.totalRoundsParticipated ?? 0}场  |  胜局 ${this.player?.totalRoundsWon ?? 0}场`, 0, 16, 15, WestColors.INK_DARK);
+        this.text(recapBox, `📊 个人竞技生涯概览: 胜率 ${winRateStr}%  |  出战 ${this.player?.totalRoundsParticipated ?? 0}场  |  胜局 ${this.player?.totalRoundsWon ?? 0}场`, 0, 14, 14, WestColors.INK_DARK);
         this.text(recapBox, "每轮赛果皆受链上加密哈希校验 · 胜负结算即时写入特区账簿", 0, -14, 12, WestColors.INK_MUTED);
 
-        // 8. 底部西部格言
+        // 底部西部格言
         this.text(
             resultBox,
             "🌵 怀俄明柯尔特特区公证署监察 · 赛果链上不可篡改 · 恪守边陲公约 🌵",
             0,
-            -465,
-            14,
+            -420,
+            13,
             WestColors.TEXT_MUTED,
         );
     }
@@ -7091,9 +8341,9 @@ export class GameApp extends Component {
         commitment: string,
         algoVersion: string,
     ): Promise<void> {
-        const mask = this.box(root, 360, 640, 720, 1280, new Color(0, 0, 0, 220), 0);
-        this.bindClick(mask, () => mask.destroy());
+        const mask = this.createModalMask(root, new Color(0, 0, 0, 220));
         const card = this.grandSaloonBox(mask, 0, 0, 670, 720, 16, WestColors.WOOD_DARK, WestColors.BRASS_FRAME);
+        this.attachModalShield(mask, card, () => mask.destroy());
         this.addModalCloseBtn(card, 670, 720, () => mask.destroy());
 
         // 顶部黑板标题
@@ -7185,44 +8435,61 @@ export class GameApp extends Component {
                 playerDailyTaskId: number;
             }>>("/api/tasks/daily");
 
-            const tasks = response.data ?? [];
-            const taskY = [360, 268, 176, 84, -8, -100];
-            tasks.slice(0, 6).forEach((task, index) => {
-                const y = taskY[index];
-                const taskBox = this.wantedPosterBox(boardBox, 0, y, 660, 80, 8);
-                const title = I18n.getLocale() === "en-US" && task.titleEn ? task.titleEn : task.titleZh;
-                this.text(taskBox, `📌 ${title}`, -120, 16, 17, WestColors.INK_DARK);
+            type DailyTaskItem = {
+                titleZh: string;
+                titleEn?: string | null;
+                progress: number;
+                targetValue: number;
+                isCompleted: boolean;
+                isClaimed: boolean;
+                playerDailyTaskId: number;
+            };
+            const tasks = this.safeArray<DailyTaskItem>(response?.data);
+            if (tasks.length === 0) {
+                const emptyCard = this.wantedPosterBox(boardBox, 0, 120, 660, 240, 10);
+                this.text(emptyCard, "🤠 今日边境悬赏差事已全部结案", 0, 50, 22, WestColors.INK_DARK);
+                this.text(emptyCard, "治安官公署赞赏你的敏捷身手！今日悬赏名额已全额兑付，", 0, 10, 15, WestColors.INK_MUTED);
+                this.text(emptyCard, "新的悬赏榜单将于明日零点准时换防签发，敬请稍后查阅！", 0, -20, 14, WestColors.INK_MUTED);
+                this.saloonButton(emptyCard, "🏇 前往赛马大厅 ➔", 0, -65, 240, 44, () => { void this.show("race"); }, true, 15);
+            } else {
+                const taskY = [360, 268, 176, 84, -8, -100];
+                tasks.slice(0, 6).forEach((task, index) => {
+                    const y = taskY[index];
+                    const taskBox = this.wantedPosterBox(boardBox, 0, y, 660, 80, 8);
+                    const title = I18n.getLocale() === "en-US" && task.titleEn ? task.titleEn : task.titleZh;
+                    this.text(taskBox, `📌 ${title}`, -120, 16, 17, WestColors.INK_DARK);
 
-                // 进度条（牛皮底槽 + 仙人掌绿充能）
-                const pct = Math.min(1, task.progress / Math.max(1, task.targetValue));
-                const barW = 340;
-                const fillW = Math.max(8, pct * barW);
-                this.box(taskBox, -120, -16, barW, 14, WestColors.PARCHMENT_BORDER, 7);
-                this.box(taskBox, -120 - barW / 2 + fillW / 2, -16, fillW, 14, WestColors.DESERT_SAGE, 7);
-                this.text(taskBox, `${task.progress} / ${task.targetValue} · ${(pct * 100).toFixed(0)}%`, -120, -16, 11, WestColors.INK_DARK);
+                    // 进度条（牛皮底槽 + 仙人掌绿充能）
+                    const pct = Math.min(1, task.progress / Math.max(1, task.targetValue));
+                    const barW = 340;
+                    const fillW = Math.max(8, pct * barW);
+                    this.box(taskBox, -120, -16, barW, 14, WestColors.PARCHMENT_BORDER, 7);
+                    this.box(taskBox, -120 - barW / 2 + fillW / 2, -16, fillW, 14, WestColors.DESERT_SAGE, 7);
+                    this.text(taskBox, `${task.progress} / ${task.targetValue} · ${(pct * 100).toFixed(0)}%`, -120, -16, 11, WestColors.INK_DARK);
 
-                if (task.isClaimed) {
-                    const tag = this.box(taskBox, 235, 0, 130, 46, WestColors.LEATHER_DARK, 8);
-                    this.text(tag, I18n.t("tasks.claimed"), 0, 0, 15, WestColors.TEXT_MUTED);
-                } else if (task.isCompleted) {
-                    this.westernButton(
-                        taskBox,
-                        this.isSubmitting ? I18n.t("common.submitting") : "领赏 (CLAIM)",
-                        235,
-                        0,
-                        130,
-                        46,
-                        () => {
-                            void this.claimTaskAsync(task.playerDailyTaskId);
-                        },
-                        true,
-                        16,
-                    );
-                } else {
-                    const tag = this.box(taskBox, 235, 0, 130, 46, WestColors.LEATHER_SADDLE, 8);
-                    this.text(tag, I18n.t("tasks.inProgress"), 0, 0, 14, WestColors.GOLD_BRIGHT);
-                }
-            });
+                    if (task.isClaimed) {
+                        const tag = this.box(taskBox, 235, 0, 130, 46, WestColors.LEATHER_DARK, 8);
+                        this.text(tag, I18n.t("tasks.claimed"), 0, 0, 15, WestColors.TEXT_MUTED);
+                    } else if (task.isCompleted) {
+                        this.westernButton(
+                            taskBox,
+                            this.isSubmitting ? I18n.t("common.submitting") : "领赏 (CLAIM)",
+                            235,
+                            0,
+                            130,
+                            46,
+                            () => {
+                                void this.claimTaskAsync(task.playerDailyTaskId);
+                            },
+                            true,
+                            16,
+                        );
+                    } else {
+                        const tag = this.box(taskBox, 235, 0, 130, 46, WestColors.LEATHER_SADDLE, 8);
+                        this.text(tag, I18n.t("tasks.inProgress"), 0, 0, 14, WestColors.GOLD_BRIGHT);
+                    }
+                });
+            }
         } catch (error) {
             this.text(
                 boardBox,
@@ -7259,7 +8526,7 @@ export class GameApp extends Component {
         );
 
         // 怀俄明治安官悬赏章程指导卡（充实下半区空间，消除150px死寂荒原）
-        const bountyTip = this.wantedPosterBox(boardBox, 0, -315, 660, 72, 8);
+        const bountyTip = this.wantedPosterBox(boardBox, 0, -325, 660, 76, 8);
         this.text(bountyTip, "📜 怀俄明治安官悬赏章程 (BOUNTY CODEX)", 0, 18, 15, WestColors.INK_DARK);
         this.text(bountyTip, "每日完成差事自动累积荒野声望 · 差事完成即刻派发金币 · 次日零点重新排查", 0, -14, 12, WestColors.INK_MUTED);
 
@@ -7268,7 +8535,7 @@ export class GameApp extends Component {
             boardBox,
             "🌵 怀俄明柯尔特特区治安官公署签发 · 每日零点准时更新 🌵",
             0,
-            -465,
+            -435,
             14,
             WestColors.TEXT_MUTED,
         );
@@ -7329,82 +8596,90 @@ export class GameApp extends Component {
             const allClaimed = completedCount === totalCount && achievements.every((x) => x.isClaimed);
             this.text(summaryCard, allClaimed ? I18n.t("feat.allClaimed") : `🎖️ 荣誉头衔: ${this.getFeatTitle(completedCount)}`, 160, 0, 17, WestColors.LEATHER_SADDLE);
 
-            // 显示成就卡片列表（最多渲染 6 个）
-            const featY = [322, 236, 150, 64, -22, -108];
-            achievements.slice(0, 6).forEach((item, index) => {
-                const y = featY[index];
-                const card = this.wantedPosterBox(featBox, 0, y, 660, 78, 8);
+            if (achievements.length === 0) {
+                const emptyCard = this.wantedPosterBox(featBox, 0, 120, 660, 240, 10);
+                this.text(emptyCard, "🎖️ 荒野勋衔册暂无记录", 0, 50, 22, WestColors.INK_DARK);
+                this.text(emptyCard, "参与正式德比赛事、达成高连胜与赢取累积奖金，", 0, 10, 15, WestColors.INK_MUTED);
+                this.text(emptyCard, "即可解锁专属功勋勋衔与大量金币津贴奖励！", 0, -20, 14, WestColors.INK_MUTED);
+                this.saloonButton(emptyCard, "🏇 前往德比竞逐 ➔", 0, -65, 240, 44, () => { void this.show("race"); }, true, 15);
+            } else {
+                // 显示成就卡片列表（最多渲染 6 个）
+                const featY = [322, 236, 150, 64, -22, -108];
+                achievements.slice(0, 6).forEach((item, index) => {
+                    const y = featY[index];
+                    const card = this.wantedPosterBox(featBox, 0, y, 660, 78, 8);
 
-                // 四角深色锻造生铁方钉扣件 (Forged Gunmetal Square Spikes)
-                const spikeNode = new Node("CardSpikes");
-                spikeNode.layer = card.layer || Layers.Enum.UI_2D;
-                card.addChild(spikeNode);
-                const spikeG = spikeNode.addComponent(Graphics);
-                const halfW = 330;
-                const halfH = 39;
-                const nailOffset = 8;
-                const corners = [
-                    { x: -halfW + nailOffset, y: halfH - nailOffset },
-                    { x: halfW - nailOffset, y: halfH - nailOffset },
-                    { x: -halfW + nailOffset, y: -halfH + nailOffset },
-                    { x: halfW - nailOffset, y: -halfH + nailOffset },
-                ];
-                for (const c of corners) {
-                    spikeG.fillColor = new Color(20, 25, 30, 220);
-                    spikeG.rect(c.x - 3.5, c.y - 3.5, 7, 7);
-                    spikeG.fill();
-                    spikeG.fillColor = WestColors.GUNMETAL;
-                    spikeG.rect(c.x - 2.5, c.y - 2.5, 5, 5);
-                    spikeG.fill();
-                }
+                    // 四角深色锻造生铁方钉扣件 (Forged Gunmetal Square Spikes)
+                    const spikeNode = new Node("CardSpikes");
+                    spikeNode.layer = card.layer || Layers.Enum.UI_2D;
+                    card.addChild(spikeNode);
+                    const spikeG = spikeNode.addComponent(Graphics);
+                    const halfW = 330;
+                    const halfH = 39;
+                    const nailOffset = 8;
+                    const corners = [
+                        { x: -halfW + nailOffset, y: halfH - nailOffset },
+                        { x: halfW - nailOffset, y: halfH - nailOffset },
+                        { x: -halfW + nailOffset, y: -halfH + nailOffset },
+                        { x: halfW - nailOffset, y: -halfH + nailOffset },
+                    ];
+                    for (const c of corners) {
+                        spikeG.fillColor = new Color(20, 25, 30, 220);
+                        spikeG.rect(c.x - 3.5, c.y - 3.5, 7, 7);
+                        spikeG.fill();
+                        spikeG.fillColor = WestColors.GUNMETAL;
+                        spikeG.rect(c.x - 2.5, c.y - 2.5, 5, 5);
+                        spikeG.fill();
+                    }
 
-                // 已达成盖火漆红蜡印，未达成呈现炭笔墨线轮廓
-                if (item.isCompleted || item.isClaimed) {
-                    const sealNode = new Node("FeatWaxSeal");
-                    sealNode.layer = card.layer || Layers.Enum.UI_2D;
-                    card.addChild(sealNode);
-                    sealNode.setPosition(135, 0, 0);
-                    sealNode.addComponent(UITransform).setContentSize(44, 44);
-                    WestStyle.drawWaxSealStamp(sealNode, 20);
-                    WestMotion.playWaxStamp(sealNode);
-                }
+                    // 已达成盖火漆红蜡印，未达成呈现炭笔墨线轮廓
+                    if (item.isCompleted || item.isClaimed) {
+                        const sealNode = new Node("FeatWaxSeal");
+                        sealNode.layer = card.layer || Layers.Enum.UI_2D;
+                        card.addChild(sealNode);
+                        sealNode.setPosition(135, 0, 0);
+                        sealNode.addComponent(UITransform).setContentSize(44, 44);
+                        WestStyle.drawWaxSealStamp(sealNode, 20);
+                        WestMotion.playWaxStamp(sealNode);
+                    }
 
-                const title = I18n.getLocale() === "en-US" && item.titleEn ? item.titleEn : item.titleZh;
-                const desc = I18n.getLocale() === "en-US" && item.descriptionEn ? item.descriptionEn : item.descriptionZh;
-                const badge = item.badgeName ? `[${item.badgeName}] ` : "";
+                    const title = I18n.getLocale() === "en-US" && item.titleEn ? item.titleEn : item.titleZh;
+                    const desc = I18n.getLocale() === "en-US" && item.descriptionEn ? item.descriptionEn : item.descriptionZh;
+                    const badge = item.badgeName ? `[${item.badgeName}] ` : "";
 
-                this.text(card, `${badge}${title}`, -120, 16, 17, WestColors.INK_DARK);
-                this.text(card, desc, -120, -4, 12, WestColors.INK_MUTED);
+                    this.text(card, `${badge}${title}`, -120, 16, 17, WestColors.INK_DARK);
+                    this.text(card, desc, -120, -4, 12, WestColors.INK_MUTED);
 
-                const pct = Math.min(1, item.currentProgress / Math.max(1, item.targetValue));
-                const barW = 340;
-                const fillW = Math.max(6, pct * barW);
-                this.box(card, -120, -22, barW, 10, WestColors.PARCHMENT_BORDER, 5);
-                this.box(card, -120 - barW / 2 + fillW / 2, -22, fillW, 10, WestColors.DESERT_SAGE, 5);
-                this.text(card, `${item.currentProgress}/${item.targetValue} · 🪙+${item.rewardAmount}`, 100, -22, 12, WestColors.INK_DARK);
+                    const pct = Math.min(1, item.currentProgress / Math.max(1, item.targetValue));
+                    const barW = 340;
+                    const fillW = Math.max(6, pct * barW);
+                    this.box(card, -120, -22, barW, 10, WestColors.PARCHMENT_BORDER, 5);
+                    this.box(card, -120 - barW / 2 + fillW / 2, -22, fillW, 10, WestColors.DESERT_SAGE, 5);
+                    this.text(card, `${item.currentProgress}/${item.targetValue} · 💰+${item.rewardAmount}`, 100, -22, 12, WestColors.INK_DARK);
 
-                if (item.isClaimed) {
-                    const tag = this.box(card, 235, 0, 126, 44, WestColors.LEATHER_DARK, 8);
-                    this.text(tag, I18n.t("feat.claimed"), 0, 0, 14, WestColors.TEXT_MUTED);
-                } else if (item.isCompleted) {
-                    this.westernButton(
-                        card,
-                        this.isSubmitting ? I18n.t("common.submitting") : "领赏 (CLAIM)",
-                        235,
-                        0,
-                        126,
-                        44,
-                        () => {
-                            void this.claimAchievementAsync(item.playerAchievementId);
-                        },
-                        true,
-                        15,
-                    );
-                } else {
-                    const tag = this.box(card, 235, 0, 126, 44, WestColors.LEATHER_SADDLE, 8);
-                    this.text(tag, `${Math.floor(pct * 100)}%`, 0, 0, 15, WestColors.GOLD_BRIGHT);
-                }
-            });
+                    if (item.isClaimed) {
+                        const tag = this.box(card, 235, 0, 126, 44, WestColors.LEATHER_DARK, 8);
+                        this.text(tag, I18n.t("feat.claimed"), 0, 0, 14, WestColors.TEXT_MUTED);
+                    } else if (item.isCompleted) {
+                        this.westernButton(
+                            card,
+                            this.isSubmitting ? I18n.t("common.submitting") : "领赏 (CLAIM)",
+                            235,
+                            0,
+                            126,
+                            44,
+                            () => {
+                                void this.claimAchievementAsync(item.playerAchievementId);
+                            },
+                            true,
+                            15,
+                        );
+                    } else {
+                        const tag = this.box(card, 235, 0, 126, 44, WestColors.LEATHER_SADDLE, 8);
+                        this.text(tag, `${Math.floor(pct * 100)}%`, 0, 0, 15, WestColors.GOLD_BRIGHT);
+                    }
+                });
+            }
         } catch (error) {
             this.text(
                 featBox,
@@ -7441,8 +8716,8 @@ export class GameApp extends Component {
         );
 
         // 荒野勋衔授予章程指导卡（充实下半区空间，消除150px死寂荒原）
-        const featTip = this.wantedPosterBox(featBox, 0, -315, 660, 68, 8);
-        this.text(featTip, "🎖️ 荒野勋衔授予章程 (COMMISSION RULES)", 0, 16, 15, WestColors.INK_DARK);
+        const featTip = this.wantedPosterBox(featBox, 0, -325, 660, 76, 8);
+        this.text(featTip, "🎖️ 荒野勋衔授予章程 (COMMISSION RULES)", 0, 18, 15, WestColors.INK_DARK);
         this.text(featTip, "完成连胜胜局与累计参赛可晋升勋衔 · 勋章由特区总督亲自授勋并载入史册", 0, -14, 12, WestColors.INK_MUTED);
 
         // 西部格言
@@ -7450,7 +8725,7 @@ export class GameApp extends Component {
             featBox,
             "🌵 荣耀属于不屈的开拓者 · 柯尔特大奖赛功勋委员会 🌵",
             0,
-            -465,
+            -435,
             14,
             WestColors.TEXT_MUTED,
         );
@@ -7468,11 +8743,11 @@ export class GameApp extends Component {
                 { idempotencyKey },
             );
             succeeded = true;
-            if (this.player && res.data?.balance !== undefined) {
-                this.player.balance = res.data.balance;
+            if (res.data?.balance !== undefined) {
+                this.animateBalanceChange(res.data.balance);
             }
             WestAudio.playGoldCascade("COMMON");
-            this.message = `🎉 领奖成功！获得 ${res.data?.rewardAmount ?? 0} 🪙`;
+            this.message = `🎉 领奖成功！获得 ${res.data?.rewardAmount ?? 0} 金币`;
             this.showToast(this.message, WestColors.GOLD_BRIGHT);
         } catch (error) {
             this.message = this.errorMessage(error, "领取奖励失败");
@@ -7499,9 +8774,9 @@ export class GameApp extends Component {
     /** 显示好友邀请与裂变返佣弹窗（对标 1.png 邀请体系并闭环负盈利抽成与主动提炼）。 */
     private async showReferralModal(): Promise<void> {
         const root = this.pageRoot!;
-        const mask = this.box(root, 360, 640, 720, 1280, new Color(0, 0, 0, 220), 0);
-        this.bindClick(mask, () => mask.destroy());
+        const mask = this.createModalMask(root, new Color(0, 0, 0, 220));
         const modal = this.grandSaloonBox(mask, 0, 0, 660, 880, 16, WestColors.WOOD_DARK, WestColors.BRASS_FRAME);
+        this.attachModalShield(mask, modal, () => mask.destroy());
         this.addModalCloseBtn(modal, 660, 880, () => mask.destroy());
 
         // 顶部黑板标题牌匾
@@ -7545,14 +8820,14 @@ export class GameApp extends Component {
             const claimedTotal = Number(data?.totalClaimedCommissionAmount ?? 0);
             const rateDesc = data?.commissionRateDescription ?? "0.5% (千分之5) + 赛事规费率";
 
-            this.text(commissionCard, `待提炼佣金: ${this.formatMoney(unclaimed)} 🪙`, -120, 16, 20, WestColors.GOLD_BRIGHT);
-            this.text(commissionCard, `累计已提炼: ${this.formatMoney(claimedTotal)} 🪙`, 130, 16, 16, WestColors.PARCHMENT_LIGHT);
+            this.text(commissionCard, `待提炼佣金: ${this.formatMoney(unclaimed)} 金币`, -120, 16, 20, WestColors.GOLD_BRIGHT);
+            this.text(commissionCard, `累计已提炼: ${this.formatMoney(claimedTotal)} 金币`, 130, 16, 16, WestColors.PARCHMENT_LIGHT);
             this.text(commissionCard, `抽成比例: 固定 ${rateDesc} · 下级净亏损时计提 (同局共同押注防对冲跳过)`, 0, -18, 12, WestColors.PARCHMENT_LIGHT);
 
             // 一键提炼按钮
             this.westernButton(
                 commissionCard,
-                unclaimed > 0 ? `🚀 一键提炼未结佣金 (+${this.formatMoney(unclaimed)}🪙)` : "⏳ 暂无可提炼佣金",
+                unclaimed > 0 ? `🚀 一键提炼未结佣金 (+${this.formatMoney(unclaimed)} 金币)` : "⏳ 暂无可提炼佣金",
                 0,
                 -52,
                 420,
@@ -7565,10 +8840,10 @@ export class GameApp extends Component {
                     void (async () => {
                         try {
                             const claimRes = await ApiClient.post<ClaimCommissionResponse>("/api/player/referral/claim", {});
-                            if (claimRes.data?.newBalance !== undefined && this.player) {
-                                this.player.balance = claimRes.data.newBalance;
+                            if (claimRes.data?.newBalance !== undefined) {
+                                this.animateBalanceChange(claimRes.data.newBalance);
                             }
-                            this.message = `🎉 提炼成功！已将 ${this.formatMoney(claimRes.data?.claimedAmount ?? unclaimed)} 🪙 佣金提取至钱包金库！`;
+                            this.message = `🎉 提炼成功！已将 ${this.formatMoney(claimRes.data?.claimedAmount ?? unclaimed)} 金币 佣金提取至钱包金库！`;
                             mask.destroy();
                             void this.showReferralModal();
                         } catch (err) {
@@ -7583,12 +8858,12 @@ export class GameApp extends Component {
             // 3. 邀请战绩统计卡片
             const statsCard = this.wantedPosterBox(modal, 0, -20, 600, 75, 8);
             this.text(statsCard, `🤠 已招募下级牛仔: ${data?.invitedCount ?? 0} 人`, -140, 0, 17, WestColors.INK_DARK);
-            this.text(statsCard, `🎁 注册引流首充礼: ${this.formatMoney(data?.totalRewardAmount ?? 0)} 🪙`, 140, 0, 16, WestColors.DESERT_SAGE);
+            this.text(statsCard, `🎁 注册引流首充礼: ${this.formatMoney(data?.totalRewardAmount ?? 0)} 金币`, 140, 0, 16, WestColors.DESERT_SAGE);
 
             // 4. 绑定引荐人表单
             if (!data?.referredByPlayerId) {
                 const bindCard = this.wantedPosterBox(modal, 0, -135, 600, 110, 8);
-                this.text(bindCard, "🤝 补填引荐人招募令 (首次绑定立享 200 🪙 启程赏金)", 0, 32, 15, WestColors.INK_DARK);
+                this.text(bindCard, "🤝 补填引荐人招募令 (首次绑定立享 200 金币 启程赏金)", 0, 32, 15, WestColors.INK_DARK);
                 const input = this.input(bindCard, I18n.t("referral.bindPlaceholder", "输入好友邀请码"), -90, -15, 260, 44, "");
                 this.saloonButton(bindCard, "绑定并领赏", 150, -15, 140, 44, () => {
                     const friendCode = input.string.trim();
@@ -7599,7 +8874,7 @@ export class GameApp extends Component {
                 }, true, 15);
             } else {
                 const bindDoneCard = this.woodBox(modal, 0, -120, 600, 50, 6, WestColors.WOOD_DARK, WestColors.DESERT_SAGE);
-                this.text(bindDoneCard, "✅ 您已绑定引荐人，200 🪙 启程赏金已入账", 0, 0, 16, WestColors.GOLD_BRIGHT);
+                this.text(bindDoneCard, "✅ 您已绑定引荐人，200 金币 启程赏金已入账", 0, 0, 16, WestColors.GOLD_BRIGHT);
             }
 
             // 5. 规则告示黑板
@@ -7626,10 +8901,10 @@ export class GameApp extends Component {
                 "/api/player/referral/bind",
                 { inviteCode, idempotencyKey },
             );
-            if (this.player && res.data?.newBalance !== undefined) {
-                this.player.balance = res.data.newBalance;
+            if (res.data?.newBalance !== undefined) {
+                this.animateBalanceChange(res.data.newBalance);
             }
-            this.message = `🎉 成功绑定好友 [${res.data?.referrerNickname ?? ""}]，已发放 ${res.data?.noviceBonus ?? 200} 🪙 新手礼包！`;
+            this.message = `🎉 成功绑定好友 [${res.data?.referrerNickname ?? ""}]，已发放 ${res.data?.noviceBonus ?? 200} 金币 新手礼包！`;
             await this.show(this.page);
         } catch (error) {
             this.message = this.errorMessage(error, "绑定邀请码失败");
@@ -7676,74 +8951,41 @@ export class GameApp extends Component {
         const titleBox = this.chalkboardBox(stableBox, 0, 476, 660, 38, 6);
         this.text(titleBox, "🐴 柯尔特边境纯血马房与公会 · HORSE RANCH 🐴", 0, 0, 19, WestColors.GOLD_BRIGHT);
 
-        // 2. 四大子标签栏 (区分模式三纯血马房与模式一公开赛场赞助)
-        // 第一行：模式三专属纯血马房养成系统
-        this.saloonButton(
-            stableBox,
-            "🐴 [自营马房] 纯血马房 (RANCH)",
-            -160,
-            434,
-            300,
-            32,
-            () => {
-                this.stableTab = "MY_RANCH";
-                void this.show("stable");
-            },
-            this.stableTab === "MY_RANCH",
-            12,
-        );
-        this.saloonButton(
-            stableBox,
-            "🏪 [自营马房] 幼驹认领所 (NURSERY)",
-            160,
-            434,
-            300,
-            32,
-            () => {
-                this.stableTab = "NURSERY";
-                void this.show("stable");
-            },
-            this.stableTab === "NURSERY",
-            12,
-        );
-        // 第二行：模式一公开赛场1~6号名驹赞助与图鉴
-        this.saloonButton(
-            stableBox,
-            "🪙 [赛场公马] 名驹分红赞助 (SPONSOR)",
-            -160,
-            396,
-            300,
-            32,
-            () => {
-                this.stableTab = "SPONSOR";
-                void this.show("stable");
-            },
-            this.stableTab === "SPONSOR",
-            12,
-        );
-        this.saloonButton(
-            stableBox,
-            "📜 [赛场公马] 1~6号名录 (CATALOG)",
-            160,
-            396,
-            300,
-            32,
-            () => {
-                this.stableTab = "CATALOG";
-                void this.show("stable");
-            },
-            this.stableTab === "CATALOG",
-            12,
-        );
+        // 2. 四大模块切换栏 (自营马房 / 幼驹认领 / 公马赞助 / 公马名录)
+        const mainTabs = [
+            { id: "MY_RANCH", name: "🐴 自营纯血马房" },
+            { id: "NURSERY", name: "🏪 幼驹认领所" },
+            { id: "SPONSOR", name: "💰 名驹分红赞助" },
+            { id: "CATALOG", name: "📜 1~6号名录" },
+        ];
+        mainTabs.forEach((tab, tIdx) => {
+            const tx = -246 + tIdx * 164;
+            this.saloonButton(
+                stableBox,
+                tab.name,
+                tx,
+                438,
+                156,
+                30,
+                () => {
+                    this.stableTab = tab.id as "MY_RANCH" | "NURSERY" | "SPONSOR" | "CATALOG";
+                    void this.show("stable");
+                },
+                this.stableTab === tab.id,
+                11,
+            );
+        });
 
-        this.text(
-            stableBox,
-            "💡 说明:【自营马房】为玩家专属纯血马养成与巡回赛体系；【赛场公马】为大厅极速竞猜出战公马与分红赞助",
-            0,
-            368,
-            11,
-            WestColors.GOLD_METALLIC,
-        );
+        if (this.stableTab !== "MY_RANCH") {
+            this.text(
+                stableBox,
+                "💡 说明:【自营马房】为玩家专属纯血马养成与巡回赛体系；【赛场公马】为大厅极速竞猜出战公马与分红赞助",
+                0,
+                398,
+                11,
+                WestColors.GOLD_METALLIC,
+            );
+        }
 
         if (this.stableTab === "MY_RANCH") {
             await this.buildMyRanchView(stableBox);
@@ -7755,24 +8997,31 @@ export class GameApp extends Component {
             await this.buildLegacySponsorView(stableBox);
         }
 
-        // 底部工具栏
+        // 仅在非自营马房下展示通告占位卡
+        if (this.stableTab !== "MY_RANCH") {
+            const ranchNoticeCard = this.wantedPosterBox(stableBox, 0, -320, 660, 64, 8);
+            this.text(ranchNoticeCard, "🐎 怀俄明柯尔特特区马帮联合公证署监察", 0, 14, 15, WestColors.INK_DARK);
+            this.text(ranchNoticeCard, "纯血血统唯一认证 · 科学调养维持绝好调 · 参赛与分红链上实时公证入库", 0, -14, 12, WestColors.INK_MUTED);
+        }
+
+        // 底部工具栏与西部格言
         this.saloonButton(
             stableBox,
             "🚪 返回大厅 (BACK)",
             0,
-            -440,
+            -448,
             320,
-            40,
+            42,
             () => { void this.show("lobby"); },
             false,
-            16,
+            15,
         );
 
         this.text(
             stableBox,
             "🌵 纯正怀俄明荒野纯血 · 科学喂养 潜能训练 资格考核 荣耀出赛 🌵",
             0,
-            -476,
+            -488,
             13,
             WestColors.TEXT_MUTED,
         );
@@ -7793,7 +9042,94 @@ export class GameApp extends Component {
         this.box(parent, x - (width - curWidth) / 2, y - 2, curWidth, 8, WestColors.GOLD_BRIGHT, 4);
     }
 
-    /** 模式三：我的纯血马房主视图。 */
+    /**
+     * 获取赛马调子/心情心境（国人赛马养成五档调子体系）。
+     * 绝好调 (+10% 出赛全属性) / 好调 (+5%) / 普通 (±0%) / 不调 (-5%) / 绝不调或伤病 (-15%)。
+     */
+    private getHorseMoodBadge(condition: number, subStatus?: string, hunger?: number): {
+        icon: string;
+        text: string;
+        bonusStr: string;
+        color: Color;
+    } {
+        if (subStatus === "INJURED") {
+            return { icon: "🤕", text: "蹄伤微痛", bonusStr: "-15%", color: WestColors.BANDANA_RED };
+        }
+        if (subStatus === "SICK" || subStatus === "COLIC") {
+            return { icon: "🤒", text: "积食腹痛", bonusStr: "-15%", color: WestColors.BANDANA_RED };
+        }
+        if (hunger !== undefined && hunger <= 20) {
+            return { icon: "🌾", text: "饥肠辘辘", bonusStr: "-10%", color: WestColors.BANDANA_RED };
+        }
+        if (condition >= 85) {
+            return { icon: "🔥", text: "绝好调", bonusStr: "+10%", color: WestColors.GOLD_BRIGHT };
+        }
+        if (condition >= 65) {
+            return { icon: "😊", text: "好调", bonusStr: "+5%", color: WestColors.DESERT_SAGE };
+        }
+        if (condition >= 45) {
+            return { icon: "😐", text: "普通", bonusStr: "±0%", color: WestColors.GOLD_METALLIC };
+        }
+        if (condition >= 25) {
+            return { icon: "🥱", text: "不调", bonusStr: "-5%", color: WestColors.INK_MUTED };
+        }
+        return { icon: "💤", text: "绝不调", bonusStr: "-10%", color: WestColors.BANDANA_RED };
+    }
+
+    /**
+     * 国人手游操作习惯：一键全套科学调养。
+     * 自动智能检测饥饿与健康状态，缺草补草，有恙泥敷，一步恢复绝好调！
+     */
+    private async executeOneClickRanchCare(horse: RanchHorseDto): Promise<void> {
+        try {
+            // 1. 饱腹度低于 75 时智能补草
+            if (horse.hungerLevel < 75) {
+                try {
+                    await ApiClient.post("/api/ranch/feed", {
+                        horseId: horse.id,
+                        feedCode: "FEED_ALFALFA",
+                    });
+                } catch {
+                    try {
+                        await ApiClient.post("/api/ranch/feed", {
+                            horseId: horse.id,
+                            feedCode: "FEED_TIMOTHY",
+                        });
+                    } catch {
+                        // 忽略
+                    }
+                }
+            }
+
+            // 2. 积食、腹痛、伤病或调子低于 85 时理疗推拿泥敷
+            if (horse.subStatus === "SICK" || horse.subStatus === "COLIC") {
+                await ApiClient.post("/api/ranch/care", {
+                    horseId: horse.id,
+                    careType: "PROBIOTIC",
+                });
+            } else if (horse.conditionLevel < 85 || horse.subStatus === "INJURED" || horse.hoofWear > 35) {
+                await ApiClient.post("/api/ranch/care", {
+                    horseId: horse.id,
+                    careType: "PHYSIOMUD",
+                });
+            } else if (horse.staminaEnergy < 80) {
+                await ApiClient.post("/api/ranch/care", {
+                    horseId: horse.id,
+                    careType: "HANDWALK",
+                });
+            }
+
+            WestAudio.playHorseNeigh("COMMON");
+            WestAudio.playSpurJingle();
+            this.showToast(`✨【${horse.customName}】一键科学调养完成！爱驹状态满格，进入【🔥绝好调】！`, WestColors.GOLD_BRIGHT);
+            await this.loadPlayer();
+            void this.show("stable");
+        } catch (err) {
+            this.showToast(this.errorMessage(err, "一键调养失败"), WestColors.BANDANA_RED);
+        }
+    }
+
+    /** 模式三：我的纯血马房主视图。采用手机端多页面架构（2D展台 / 三视图 / 调养 / 考核），大尺寸展示 2D 美术与动效。 */
     private async buildMyRanchView(stableBox: Node): Promise<void> {
         try {
             const res = await ApiClient.get<{ horses: RanchHorseDto[] }>("/api/ranch/my-horses");
@@ -7828,18 +9164,19 @@ export class GameApp extends Component {
                 this.selectedRanchHorseId = horses[0].id;
             }
 
-            // 1. 水平马匹切换选择栏 (Y = 352)
-            const horseBar = this.box(stableBox, 0, 352, 660, 38, WestColors.WOOD_DARK, 6);
+            // 1. 水平马匹切换选择栏 (Y = 404, H = 34, 提升触控高度)
+            const horseBar = this.box(stableBox, 0, 404, 660, 34, WestColors.WOOD_DARK, 6);
             horses.slice(0, 4).forEach((h, idx) => {
                 const posX = -220 + idx * 125;
                 const isSelected = h.id === this.selectedRanchHorseId;
+                const hMood = this.getHorseMoodBadge(h.conditionLevel, h.subStatus, h.hungerLevel);
                 this.saloonButton(
                     horseBar,
-                    `${h.customName.slice(0, 5)}`,
+                    `${hMood.icon} ${h.customName.slice(0, 4)}`,
                     posX,
                     0,
                     118,
-                    30,
+                    32,
                     () => {
                         this.selectedRanchHorseId = h.id;
                         void this.show("stable");
@@ -7849,14 +9186,13 @@ export class GameApp extends Component {
                 );
             });
 
-            // 右侧添加快速添置幼驹按钮
             this.saloonButton(
                 horseBar,
-                "+ 添置幼驹",
+                "+ 认领幼驹",
                 260,
                 0,
                 96,
-                30,
+                32,
                 () => {
                     this.stableTab = "NURSERY";
                     void this.show("stable");
@@ -7869,8 +9205,6 @@ export class GameApp extends Component {
             const detailRes = await ApiClient.get<RanchHorseDto>(`/api/ranch/horses/${this.selectedRanchHorseId}`);
             const horse = detailRes.data;
 
-            // 3. 卡片 A: 赛马身份与生涯战绩 (Y = 250, H = 125)
-            const profileCard = this.wantedPosterBox(stableBox, 0, 250, 660, 125, 8);
             const genderStr = horse.gender === "STALLION" ? "♂ 牡马" : "♀ 牝马";
             const stageNames: Record<string, string> = {
                 FOAL: "幼驹期 🍼",
@@ -7886,179 +9220,525 @@ export class GameApp extends Component {
                 MYTHIC: "传说名驹 ★★★",
             };
             const tierStr = tierNames[horse.pedigreeTier] || horse.pedigreeTier;
+            const mood = this.getHorseMoodBadge(horse.conditionLevel, horse.subStatus, horse.hungerLevel);
 
-            // 专属 2D 写实赛马活体展示区 (Ranch2DHorseLiveStage)
-            const horseStageNode = new Node("Ranch2DHorseLiveStage");
-            horseStageNode.layer = profileCard.layer || Layers.Enum.UI_2D;
-            profileCard.addChild(horseStageNode);
-            horseStageNode.setPosition(-265, -5, 0);
-            horseStageNode.addComponent(UITransform).setContentSize(96, 96);
-
-            // 怀俄明原木马厩底托与草坪
-            const hsg = horseStageNode.addComponent(Graphics);
-            hsg.fillColor = new Color(74, 52, 38, 220);
-            hsg.roundRect(-46, -46, 92, 92, 6);
-            hsg.fill();
-            hsg.fillColor = new Color(135, 155, 95, 230);
-            hsg.roundRect(-42, -42, 84, 84, 4);
-            hsg.fill();
-            hsg.strokeColor = WestColors.BRASS_FRAME;
-            hsg.lineWidth = 1.6;
-            hsg.roundRect(-42, -42, 84, 84, 4);
-            hsg.stroke();
-
-            // 挂载写实 2D 赛马表现组件（依马匹特征与成长形态呈现，带待机呼吸律动）
-            const horseNo = (Math.abs(Number(this.selectedRanchHorseId || 1) - 1) % 12) + 1;
-            const liveVisual = horseStageNode.addComponent(HorseVisual2D);
-            liveVisual.setHorseNo(horseNo);
-            liveVisual.setAction("Stand", 0.8);
-
-            // 点击该展示区直接打开三视图与油画大图
-            const stageBtn = horseStageNode.addComponent(Button);
-            stageBtn.node.on(Button.EventType.CLICK, () => {
-                HorseGalleryModal.show(horseNo, this.node);
-            }, this);
-
-            // 文字信息调整排版（X = -45 起始）
-            this.text(profileCard, `🏇 ${horse.customName} (${horse.horseCode}) · [${tierStr}] · ${stageStr}`, -45, 36, 16, WestColors.INK_DARK);
-            const trialBest = horse.qualificationTime ? `${Number(horse.qualificationTime).toFixed(2)}s` : "尚未考核";
-            this.text(profileCard, `性别: ${genderStr} · 毛色: ${horse.coatColor} · 最佳400m: ${trialBest}`, -45, 10, 13, WestColors.INK_MUTED);
-            this.text(profileCard, `战绩: ${horse.totalCareerRaces}战 ${horse.totalCareerWins}胜 · 赢得总奖金: ${this.formatMoney(horse.accumulatedPurse)} 🪙`, -45, -14, 13, WestColors.DESERT_SAGE);
-            const statusNotice = horse.subStatus === "SICK" || horse.subStatus === "COLIC"
-                ? "⚠️ 积食腹痛！需理疗草本泥敷！"
-                : horse.subStatus === "INJURED"
-                ? "⚠️ 蹄腿损伤！急需专业钉蹄！"
-                : horse.subStatus === "RETIRED"
-                ? "🏛️ 已退役入库"
-                : "✅ 状态健旺";
-            this.text(profileCard, `公会状态: ${statusNotice}`, -45, -38, 12, horse.subStatus === "IDLE" || horse.subStatus === "HEALTHY" ? WestColors.INK_MUTED : WestColors.BANDANA_RED);
-
-            // 资格赛徽章与三视图图鉴入口
-            const badgeBox = this.chalkboardBox(profileCard, 240, 10, 140, 75, 8);
-            if (horse.isLicensedRacer) {
-                this.text(badgeBox, "🏅", 0, 16, 24, WestColors.GOLD_BRIGHT);
-                this.text(badgeBox, "执照已签发", 0, -8, 12, WestColors.GOLD_BRIGHT);
-                this.text(badgeBox, horse.licenseCertCode ?? "职业资质", 0, -24, 10, WestColors.PARCHMENT_LIGHT);
-            } else {
-                this.text(badgeBox, "⏳", 0, 16, 24, WestColors.INK_MUTED);
-                this.text(badgeBox, "尚未通过考核", 0, -8, 12, WestColors.BANDANA_RED);
-                this.text(badgeBox, "需跑进 24.50s", 0, -24, 10, WestColors.PARCHMENT_LIGHT);
+            // 智能匹配名驹与幼驹资产信息
+            let matchedNo = 1;
+            const cName = horse.customName || "";
+            if (cName.includes("铜") || cName.includes("Copper")) matchedNo = 14;
+            else if (cName.includes("火") || cName.includes("焰") || cName.includes("Fire")) matchedNo = 13;
+            else if (cName.includes("白") || cName.includes("银") || cName.includes("Silver")) matchedNo = 15;
+            else if (cName.includes("黑") || cName.includes("暗") || cName.includes("Storm")) matchedNo = 16;
+            else if (cName.includes("月") || cName.includes("影") || cName.includes("Moon")) matchedNo = 17;
+            else if (cName.includes("金") || cName.includes("鹰") || cName.includes("Eagle")) matchedNo = 19;
+            else if (cName.includes("幽") || cName.includes("幻") || cName.includes("Phantom")) matchedNo = 20;
+            else if (cName.includes("疾") || cName.includes("风")) matchedNo = 3;
+            else if (cName.includes("沙") || cName.includes("漠")) matchedNo = 8;
+            else {
+                const parsedId = Number(this.selectedRanchHorseId);
+                matchedNo = (!isNaN(parsedId) && parsedId > 0) ? ((parsedId - 1) % 20) + 1 : 1;
             }
 
-            // 养马 2D 古典画作与解剖三视图入口按钮
-            this.saloonButton(
-                profileCard,
-                "🖼️ 查看2D画作与三视图",
-                240,
-                -42,
-                140,
-                24,
-                () => {
-                    HorseGalleryModal.show(horseNo, this.node);
-                },
-                false,
-                11
-            );
+            const matchedProfile = HorseAssetRegistry.getHorseByName(horse.customName);
+            const horseProfile = matchedProfile || HorseAssetRegistry.getHorseByNo(matchedNo);
+            const effectiveHorseNo = horseProfile?.horseNo || matchedNo || 1;
 
-            // 4. 卡片 B: 五维潜能属性面板 (Y = 112, H = 125)
-            const statsCard = this.wantedPosterBox(stableBox, 0, 112, 660, 125, 8);
-            this.text(statsCard, "📊 五维竞技潜能 (当前实值 / 潜能上限)", 0, 44, 14, WestColors.INK_DARK);
-            // 左列
-            this.drawStatBar(statsCard, "⚡ 速度", Number(horse.speedStat), Number(horse.speedPotential), -160, 16, 280);
-            this.drawStatBar(statsCard, "🏃 耐力", Number(horse.staminaStat), Number(horse.staminaPotential), -160, -22, 280);
-            // 右列
-            this.drawStatBar(statsCard, "💥 爆发", Number(horse.burstStat), Number(horse.burstPotential), 160, 16, 280);
-            this.drawStatBar(statsCard, "🌪️ 柔韧", Number(horse.agilityStat), Number(horse.agilityPotential), 160, -22, 280);
+            const isFoal = horse.growthStage === "FOAL" || horse.growthStage === "JUVENILE";
+            const fStage = HorseAssetRegistry.parseGrowthStage(horse.growthStage);
 
-            // 5. 卡片 C: 生理代谢与装备 (Y = -22, H = 120)
-            const bioCard = this.wantedPosterBox(stableBox, 0, -22, 660, 120, 8);
-            const colicWarn = horse.hungerLevel >= 85 ? " (饱腹过高⚠️)" : "";
-            const fatigueWarn = horse.staminaEnergy <= 20 ? " (体力匮乏⚠️)" : "";
-            this.text(bioCard, `🌾 饱腹: ${horse.hungerLevel}/100${colicWarn} · ⚡ 体力: ${horse.staminaEnergy}/100${fatigueWarn} · 💖 状态: ${horse.conditionLevel}/100`, 0, 36, 13, WestColors.INK_DARK);
-            this.text(bioCard, `🛡️ 蹄铁磨损: ${horse.hoofWear}/100 · ❤️ 健康: ${horse.healthPoints}/100 · 🤝 亲密度: ${horse.intimacyLevel}/100`, 0, 12, 13, WestColors.INK_DARK);
+            // 3. 【手机端专属 3 大二级子页面切换导航栏】(Y = 362, H = 38, W = 660, 宽大触控易点按)
+            const ranchSubTabs = [
+                { id: "STAGE_2D", name: "🐴 2D名驹大展台" },
+                { id: "TRAIN", name: "🌾 调养特训工坊" },
+                { id: "TRIALS", name: "🏅 考核赛事中心" },
+            ];
+            ranchSubTabs.forEach((st, sIdx) => {
+                const sx = -220 + sIdx * 220;
+                const isCur = this.ranchSubTab === st.id;
+                this.saloonButton(
+                    stableBox,
+                    st.name,
+                    sx,
+                    362,
+                    210,
+                    36,
+                    () => {
+                        this.ranchSubTab = st.id as "STAGE_2D" | "TRAIN" | "TRIALS";
+                        void this.show("stable");
+                    },
+                    isCur,
+                    13,
+                );
+            });
 
-            // 装备槽
-            const saddleName = horse.saddleItemId ? "已装配" : "空置";
-            const stirrupName = horse.stirrupItemId ? "已装配" : "空置";
-            const shoeName = horse.horseshoeItemId ? "已装配" : "空置";
-            this.text(bioCard, `🛡️ 马鞍: [${saddleName}]  |  🦿 马镫: [${stirrupName}]  |  🧲 蹄铁: [${shoeName}]`, 0, -18, 13, WestColors.LEATHER_SADDLE);
-            this.text(bioCard, "装备马具可全方位激活速度、耐力与稳定性加成", 0, -38, 11, WestColors.INK_MUTED);
+            // =========================================================================================
+            // 子页面 1：🐴 2D名驹大展台 (超大视口 + 2D奔跑/立绘/三视图即时切换 + 6大触控动作 + 亲密抚摸)
+            // =========================================================================================
+            if (this.ranchSubTab === "STAGE_2D") {
+                // A. 顶部马匹身份名牌卡 (Y = 320, H = 36, W = 660)
+                const idCard = this.wantedPosterBox(stableBox, 0, 320, 660, 36, 4);
+                this.text(idCard, `🏇 ${horse.customName} · [${tierStr}] · ${stageStr} (${genderStr})`, -315, 0, 13, WestColors.INK_DARK, HorizontalTextAlignment.LEFT, 360);
+                this.text(idCard, `【心境】${mood.icon} ${mood.text} (${mood.bonusStr}) | 毛色: ${horse.coatColor}`, 315, 0, 11, mood.color, HorizontalTextAlignment.RIGHT, 280);
 
-            // 6. 核心操作交互按钮组 (两排)
-            // 第一排 (Y = -110): 投喂、训练、医护
-            this.saloonButton(
-                stableBox,
-                "🌾 粗精投喂",
-                -210,
-                -110,
-                200,
-                38,
-                () => { void this.openRanchFeedModal(horse); },
-                true,
-                14,
-            );
-            this.saloonButton(
-                stableBox,
-                "🏇 四大训练",
-                0,
-                -110,
-                200,
-                38,
-                () => { void this.openRanchTrainModal(horse); },
-                true,
-                14,
-            );
-            this.saloonButton(
-                stableBox,
-                "🛁 理疗医护",
-                210,
-                -110,
-                200,
-                38,
-                () => { void this.openRanchCareModal(horse); },
-                false,
-                14,
-            );
+                // B. 【超大 2D 名驹主舞台】(Y = 110, H = 350, W = 660)
+                const stageBox = this.grandSaloonBox(stableBox, 0, 110, 660, 350, 10, WestColors.WOOD_DARK, WestColors.BRASS_FRAME);
 
-            // 第二排 (Y = -158): 马具装配、400m试跑、公会回购
-            this.saloonButton(
-                stableBox,
-                "🛡️ 马具装配",
-                -210,
-                -158,
-                200,
-                38,
-                () => { void this.openRanchEquipModal(horse); },
-                false,
-                14,
-            );
-            this.saloonButton(
-                stableBox,
-                "⏱️ 400m资格试跑",
-                0,
-                -158,
-                200,
-                38,
-                () => { this.openRanchTrialModal(horse); },
-                !horse.isLicensedRacer,
-                14,
-            );
-            this.saloonButton(
-                stableBox,
-                "🏷️ 公会保底回购",
-                210,
-                -158,
-                200,
-                38,
-                () => { this.openRanchBuybackModal(horse); },
-                false,
-                14,
-            );
+                // 舞台顶部 5 大视觉模式切换栏 (内部 Y = 145)
+                const viewModes: { id: "GALLOP" | "SHOWCASE" | "ORTHO_SIDE" | "ORTHO_FRONT" | "ORTHO_BACK"; label: string }[] = [
+                    { id: "GALLOP", label: "⚡ 2D奔跑" },
+                    { id: "SHOWCASE", label: "🖼️ 艺术立绘" },
+                    { id: "ORTHO_SIDE", label: "📐 侧视解剖" },
+                    { id: "ORTHO_FRONT", label: "👁️ 正面透视" },
+                    { id: "ORTHO_BACK", label: "🐎 后躯肌理" },
+                ];
+                viewModes.forEach((vm, vIdx) => {
+                    const vx = -240 + vIdx * 120;
+                    const isCurVm = this.ranchDisplayMode === vm.id;
+                    this.saloonButton(
+                        stageBox,
+                        vm.label,
+                        vx,
+                        145,
+                        116,
+                        30,
+                        () => {
+                            this.ranchDisplayMode = vm.id;
+                            void this.show("stable");
+                        },
+                        isCurVm,
+                        11,
+                    );
+                });
 
-            // 西部培育指南小卡 (Y = -215)
-            const guideBox = this.wantedPosterBox(stableBox, 0, -215, 660, 52, 6);
-            this.text(guideBox, "💡 边境马主须知: 投喂粗饲料增加饱腹，精饲料强化体能，但连续饱食将引发积食 Colic！", 0, 8, 12, WestColors.INK_DARK);
-            this.text(guideBox, "四大专项训练受马匹潜能极限约束，过度训练会积累疲劳，试跑跑进 24.50 秒即可获得出赛执照！", 0, -10, 11, WestColors.INK_MUTED);
+                // 核心大视口画框 (内部 Y = -16, W = 636, H = 260)
+                const viewport = new Node("StageViewport");
+                viewport.layer = stageBox.layer || Layers.Enum.UI_2D;
+                stageBox.addChild(viewport);
+                viewport.setPosition(0, -16, 0);
+                viewport.addComponent(UITransform).setContentSize(636, 260);
+
+                const vpg = viewport.addComponent(Graphics);
+                vpg.fillColor = new Color(242, 236, 222, 255);
+                vpg.roundRect(-318, -130, 636, 260, 8);
+                vpg.fill();
+                vpg.strokeColor = WestColors.BRASS_FRAME;
+                vpg.lineWidth = 1.8;
+                vpg.roundRect(-318, -130, 636, 260, 8);
+                vpg.stroke();
+
+                let liveVisual: HorseVisual2D | null = null;
+
+                if (this.ranchDisplayMode === "GALLOP") {
+                    // 呈现大尺寸 2D 互动奔跑马匹草甸
+                    vpg.fillColor = new Color(116, 158, 68, 255);
+                    vpg.rect(-316, -128, 632, 95);
+                    vpg.fill();
+                    vpg.strokeColor = new Color(145, 95, 55, 255);
+                    vpg.lineWidth = 1.6;
+                    vpg.moveTo(-316, -33);
+                    vpg.lineTo(316, -33);
+                    vpg.stroke();
+
+                    const horseMount = new Node("LiveHorseMount");
+                    horseMount.layer = viewport.layer || Layers.Enum.UI_2D;
+                    viewport.addChild(horseMount);
+                    horseMount.setPosition(0, -22, 0);
+
+                    liveVisual = horseMount.addComponent(HorseVisual2D);
+                    liveVisual.isPaddockMode = true;
+                    if (isFoal) {
+                        liveVisual.setFoalStage(effectiveHorseNo, fStage);
+                    } else {
+                        liveVisual.setHorseNo(effectiveHorseNo);
+                    }
+                    // 2.6x 超大比例，充分展示 2D 骨骼动力学与皮毛细节
+                    liveVisual.setDisplayScale(2.6);
+
+                    if (horse.subStatus === "INJURED") {
+                        liveVisual.setAction("Paw", 0.9, "蹄腿微痛");
+                    } else if (horse.subStatus === "SICK" || horse.subStatus === "COLIC") {
+                        liveVisual.setAction("Lie_Down", 0.8, "腹痛卧床");
+                    } else if (horse.staminaEnergy <= 20) {
+                        liveVisual.setAction("Lie_Down", 0.9, "体力耗竭卧息");
+                    } else if (horse.conditionLevel >= 85) {
+                        liveVisual.setAction("Rear", 1.1, "绝好调·昂首起扬");
+                    } else {
+                        liveVisual.setAction("Stand", 1.0, "悠然待机");
+                    }
+                } else {
+                    // 静态高精图展示（立绘或三视图）
+                    const showcaseImgNode = new Node("ShowcaseImg");
+                    showcaseImgNode.layer = viewport.layer || Layers.Enum.UI_2D;
+                    viewport.addChild(showcaseImgNode);
+                    showcaseImgNode.setPosition(0, 0, 0);
+                    const sUt = showcaseImgNode.addComponent(UITransform);
+                    sUt.setContentSize(620, 250);
+                    showcaseImgNode.addComponent(Sprite).sizeMode = Sprite.SizeMode.CUSTOM;
+
+                    if (this.ranchDisplayMode === "SHOWCASE") {
+                        if (isFoal) {
+                            HorseSprites.applyFoalStage(showcaseImgNode, fStage, effectiveHorseNo);
+                        } else {
+                            HorseSprites.applyHorseShowcase(showcaseImgNode, effectiveHorseNo);
+                        }
+                    } else if (this.ranchDisplayMode === "ORTHO_SIDE") {
+                        HorseSprites.applyHorseOrthoSide(showcaseImgNode, effectiveHorseNo);
+                    } else if (this.ranchDisplayMode === "ORTHO_FRONT") {
+                        HorseSprites.applyHorseOrthoFront(showcaseImgNode, effectiveHorseNo);
+                    } else if (this.ranchDisplayMode === "ORTHO_BACK") {
+                        HorseSprites.applyHorseOrthoBack(showcaseImgNode, effectiveHorseNo);
+                    }
+                }
+
+                // C. 舞台下方：根据当前展示模式自适应操作区
+                if (this.ranchDisplayMode === "GALLOP") {
+                    // 6大即时动作触控大按钮栏（排成 2 行 3 列，每按钮 200px 宽、40px 高，指尖极易点击）
+                    const actionBox = this.wantedPosterBox(stableBox, 0, -140, 660, 125, 6);
+                    this.text(actionBox, "⚡ 即时拟真骨骼动力学动作指令 (轻触驱动马体即时演绎)", 0, 38, 12, WestColors.INK_DARK);
+
+                    const quickChips = [
+                        { id: "Graze", name: "🌾 低头吃草", desc: "低头吃草", toast: "🌾 正在享用新鲜特级牧草" },
+                        { id: "Rear", name: "⚡ 昂首起扬", desc: "英勇起扬", toast: "⚡ 昂首立起咆哮长嘶！" },
+                        { id: "Buck", name: "🤸 活泼尥蹶", desc: "活泼踢跃", toast: "🤸 活泼欢快尥蹶子！" },
+                        { id: "Sliding_Stop", name: "🛑 深蹲急停", desc: "深蹲刹车", toast: "🛑 后肢深踏急停刹车！" },
+                        { id: "Trot", name: "🏃 弹性快步", desc: "弹性慢跑", toast: "🏃 步态轻快富有弹性！" },
+                        { id: "Stand", name: "🐴 悠然待机", desc: "待机站立", toast: "🐴 悠然站立机敏顾盼。" },
+                    ];
+
+                    // 第一行 3 个动作
+                    quickChips.slice(0, 3).forEach((q, qIdx) => {
+                        const qx = -215 + qIdx * 215;
+                        this.saloonButton(
+                            actionBox,
+                            q.name,
+                            qx,
+                            6,
+                            200,
+                            38,
+                            () => {
+                                if (liveVisual) {
+                                    liveVisual.setAction(q.id, 1.2, q.desc);
+                                }
+                                this.showToast(`【${horse.customName}】${q.toast}`, WestColors.GOLD_BRIGHT);
+                            },
+                            false,
+                            13,
+                        );
+                    });
+
+                    // 第二行 3 个动作
+                    quickChips.slice(3, 6).forEach((q, qIdx) => {
+                        const qx = -215 + qIdx * 215;
+                        this.saloonButton(
+                            actionBox,
+                            q.name,
+                            qx,
+                            -40,
+                            200,
+                            38,
+                            () => {
+                                if (liveVisual) {
+                                    liveVisual.setAction(q.id, 1.2, q.desc);
+                                }
+                                this.showToast(`【${horse.customName}】${q.toast}`, WestColors.GOLD_BRIGHT);
+                            },
+                            false,
+                            13,
+                        );
+                    });
+
+                    // 快速子页面跳转栏 (Y = -230, H = 44, W = 660)
+                    const navBar = this.wantedPosterBox(stableBox, 0, -230, 660, 44, 6);
+                    this.saloonButton(
+                        navBar,
+                        "🌾 调养与特训工坊 ➔",
+                        -160,
+                        0,
+                        300,
+                        40,
+                        () => {
+                            this.ranchSubTab = "TRAIN";
+                            void this.show("stable");
+                        },
+                        false,
+                        13,
+                    );
+                    this.saloonButton(
+                        navBar,
+                        "🏅 400m考核试跑 ➔",
+                        160,
+                        0,
+                        300,
+                        40,
+                        () => {
+                            this.ranchSubTab = "TRIALS";
+                            void this.show("stable");
+                        },
+                        false,
+                        13,
+                    );
+
+                    // 底部公会认证卡 (Y = -282, H = 40, W = 660)
+                    const noticeCard = this.wantedPosterBox(stableBox, 0, -282, 660, 40, 6);
+                    this.text(noticeCard, "🐎 怀俄明柯尔特特区马帮公证署 · 纯血血统唯一认证 · 维持绝好调出赛全属性+10%", 0, 0, 11, WestColors.INK_MUTED);
+
+                } else {
+                    // 静态解剖/立绘模式下展示深度解析说明板 (Y = -140, H = 125, W = 660)
+                    const descBox = this.wantedPosterBox(stableBox, 0, -140, 660, 125, 6);
+                    this.text(descBox, `🔬 骨骼与体态特征: ${horseProfile.descriptionZh}`, 0, 36, 12, WestColors.INK_DARK, HorizontalTextAlignment.CENTER, 640);
+                    this.text(descBox, `🧬 原型血统: ${horseProfile.breed}  ·  推荐竞技风格: 【${horseProfile.runningStyle}】`, 0, 6, 12, WestColors.INK_DARK, HorizontalTextAlignment.CENTER, 640);
+                    this.text(descBox, `🎨 毛色与白章: ${horseProfile.coatColor} · 骨骺闭合良好，肌肉紧致度达纯血竞赛级标准`, 0, -24, 11, WestColors.INK_MUTED, HorizontalTextAlignment.CENTER, 640);
+
+                    // 快捷切换回 2D 动效 (Y = -230, H = 44, W = 660)
+                    const navBar = this.wantedPosterBox(stableBox, 0, -230, 660, 44, 6);
+                    this.saloonButton(
+                        navBar,
+                        "⚡ 切换为 2D 骨骼动力学奔跑演练 ➔",
+                        0,
+                        0,
+                        380,
+                        40,
+                        () => {
+                            this.ranchDisplayMode = "GALLOP";
+                            void this.show("stable");
+                        },
+                        true,
+                        14,
+                    );
+
+                    // 底部存证卡 (Y = -282, H = 40, W = 660)
+                    const noticeCard = this.wantedPosterBox(stableBox, 0, -282, 660, 40, 6);
+                    this.text(noticeCard, "🐎 怀俄明柯尔特特区马帮公证署 · 纯血解剖构造公证存证 · 纯血保障权益不可篡改", 0, 0, 11, WestColors.INK_MUTED);
+                }
+
+            // =========================================================================================
+            // 子页面 2：🌾 调养特训工坊 (一键全套调养 + 五维大进度条 + 生理代谢卡 + 四大训练喂食操作)
+            // =========================================================================================
+            } else if (this.ranchSubTab === "TRAIN") {
+                // A. 置顶一键全套调养金色大横幅 (Y = 320, H = 44, W = 660)
+                this.saloonButton(
+                    stableBox,
+                    "✨ 一键全套调养 (智能饱腹·全套理疗恢复🔥绝好调)",
+                    0,
+                    320,
+                    660,
+                    44,
+                    () => { void this.executeOneClickRanchCare(horse); },
+                    true,
+                    15,
+                );
+
+                // B. 五维竞技潜能全面仪表盘 (Y = 175, H = 215, W = 660)
+                const statsCard = this.wantedPosterBox(stableBox, 0, 175, 660, 215, 8);
+                this.text(statsCard, "📊 五维竞技潜能矩阵 (当前实效数值 / 基因极限上限)", 0, 80, 14, WestColors.INK_DARK);
+
+                this.drawStatBar(statsCard, "⚡ 速度极限 (Speed)", Number(horse.speedStat), Number(horse.speedPotential), -160, 42, 280);
+                this.drawStatBar(statsCard, "💥 爆发冲刺 (Burst)", Number(horse.burstStat), Number(horse.burstPotential), 160, 42, 280);
+                this.drawStatBar(statsCard, "🏃 耐力持久 (Stamina)", Number(horse.staminaStat), Number(horse.staminaPotential), -160, -4, 280);
+                this.drawStatBar(statsCard, "🌪️ 柔韧弯道 (Agility)", Number(horse.agilityStat), Number(horse.agilityPotential), 160, -4, 280);
+                this.drawStatBar(statsCard, "🧠 性情斗志 (Temper)", Number(horse.temperamentStat), Number(horse.temperamentPotential), 0, -50, 380);
+
+                const statTotal = Number(horse.speedStat) + Number(horse.burstStat) + Number(horse.staminaStat) + Number(horse.agilityStat) + Number(horse.temperamentStat);
+                let rankGrade = "C 级潜力马";
+                if (statTotal >= 240) rankGrade = "🌟 S 级传奇名驹";
+                else if (statTotal >= 200) rankGrade = "🏅 A 级纯血战马";
+                else if (statTotal >= 170) rankGrade = "⚡ B 级优秀赛驹";
+                this.text(statsCard, `当前综合战力总评: 【${rankGrade}】 (五维总值: ${statTotal.toFixed(1)})`, 0, -82, 12, WestColors.GOLD_METALLIC);
+
+                // C. 生理代谢与健康监视卡 (Y = 25, H = 90, W = 660)
+                const metaCard = this.wantedPosterBox(stableBox, 0, 25, 660, 90, 6);
+                const colicWarn = horse.hungerLevel >= 85 ? " (饱腹过高⚠️)" : "";
+                const fatigueWarn = horse.staminaEnergy <= 20 ? " (体力匮乏⚠️)" : "";
+
+                this.text(
+                    metaCard,
+                    `🌾 饱腹: ${horse.hungerLevel}/100${colicWarn}   ⚡ 体力: ${horse.staminaEnergy}/100${fatigueWarn}   💖 状态: ${horse.conditionLevel}/100`,
+                    0,
+                    22,
+                    12,
+                    WestColors.INK_DARK,
+                );
+                this.text(
+                    metaCard,
+                    `🛡️ 蹄铁: ${horse.hoofWear}/100   ❤️ 健康: ${horse.healthPoints}/100   🤝 亲密: ${horse.intimacyLevel}/100`,
+                    0,
+                    -2,
+                    12,
+                    WestColors.INK_DARK,
+                );
+
+                const saddleName = horse.saddleItemId ? "已装配" : "空置";
+                const stirrupName = horse.stirrupItemId ? "已装配" : "空置";
+                const shoeName = horse.horseshoeItemId ? "已装配" : "空置";
+                this.text(metaCard, `装备槽位: 马鞍【${saddleName}】 · 马镫【${stirrupName}】 · 蹄铁【${shoeName}】 (装配马具全面激发速度与稳定性)`, 0, -26, 10, WestColors.LEATHER_SADDLE);
+
+                // D. 四大核心养成操作大按钮 (Y = -65, H = 96, W = 660)
+                const careBox = this.grandSaloonBox(stableBox, 0, -65, 660, 96, 8, WestColors.WOOD_DARK, WestColors.BRASS_FRAME);
+
+                this.saloonButton(
+                    careBox,
+                    "🌾 粗精科学投喂 (FEED)",
+                    -160,
+                    18,
+                    310,
+                    46,
+                    () => { void this.openRanchFeedModal(horse); },
+                    true,
+                    14,
+                );
+                this.saloonButton(
+                    careBox,
+                    "🏋️ 四大骑术特训 (TRAIN)",
+                    160,
+                    18,
+                    310,
+                    46,
+                    () => { void this.openRanchTrainModal(horse); },
+                    true,
+                    14,
+                );
+                this.saloonButton(
+                    careBox,
+                    "🩺 全套理疗医护 (CARE)",
+                    -160,
+                    -28,
+                    310,
+                    46,
+                    () => { void this.openRanchCareModal(horse); },
+                    horse.subStatus === "SICK" || horse.subStatus === "INJURED" || horse.conditionLevel < 65,
+                    14,
+                );
+                this.saloonButton(
+                    careBox,
+                    "🛡️ 顶级马具装配 (EQUIP)",
+                    160,
+                    -28,
+                    310,
+                    46,
+                    () => { void this.openRanchEquipModal(horse); },
+                    false,
+                    14,
+                );
+
+                // E. 调养备忘录 (Y = -155, H = 55, W = 660)
+                const memoBox = this.wantedPosterBox(stableBox, 0, -155, 660, 55, 6);
+                this.text(memoBox, "💡 边境马主须知: 每日维持饱腹在 60~85 且无伤病时出赛，将触发【🔥绝好调】全属性+10%狂暴增益！", 0, 10, 11, WestColors.INK_DARK);
+                this.text(memoBox, "四大专项骑术训练可突破五维潜能上限；理疗医护可消除疲劳与蹄腿病疾。", 0, -12, 10, WestColors.INK_MUTED);
+
+                // F. 快速跳转按钮 (Y = -215, H = 42, W = 660)
+                const trainNav = this.wantedPosterBox(stableBox, 0, -215, 660, 42, 6);
+                this.saloonButton(
+                    trainNav,
+                    "🌟 返回 2D 名驹大展台 ➔",
+                    -160,
+                    0,
+                    300,
+                    40,
+                    () => {
+                        this.ranchSubTab = "STAGE_2D";
+                        void this.show("stable");
+                    },
+                    false,
+                    13,
+                );
+                this.saloonButton(
+                    trainNav,
+                    "🏅 前往 400m 考核赛事 ➔",
+                    160,
+                    0,
+                    300,
+                    40,
+                    () => {
+                        this.ranchSubTab = "TRIALS";
+                        void this.show("stable");
+                    },
+                    false,
+                    13,
+                );
+
+            // =========================================================================================
+            // 子页面 3：🏅 考核赛事中心 (职业赛马执照 + 400m 极速试跑大挑战 + 生涯战绩与保底回购)
+            // =========================================================================================
+            } else {
+                // A. 职业赛马考核执照卡 (Y = 295, H = 76, W = 660，与上方导航栏保持充足安全间距)
+                const licenseCard = this.wantedPosterBox(stableBox, 0, 295, 660, 76, 8);
+                const trialBest = horse.qualificationTime ? `${Number(horse.qualificationTime).toFixed(2)}s` : "尚未考核";
+                const licenseText = horse.isLicensedRacer ? "🏅 职业赛马执照已签发" : "⏳ 试跑未达标 (基准需≤24.50s)";
+                const licenseCol = horse.isLicensedRacer ? WestColors.GOLD_BRIGHT : WestColors.BANDANA_RED;
+
+                this.text(licenseCard, `怀俄明柯尔特特区 · 职业赛马执照资格评审`, -310, 16, 13, WestColors.INK_DARK, HorizontalTextAlignment.LEFT);
+                this.text(licenseCard, `${licenseText}  |  400m 个人最佳试跑: ${trialBest}`, -310, -16, 12, licenseCol, HorizontalTextAlignment.LEFT);
+                this.text(licenseCard, `执照编号: WY-LIC-${horse.horseCode.replace("#", "")}`, 310, 16, 10, WestColors.INK_MUTED, HorizontalTextAlignment.RIGHT);
+                this.text(licenseCard, horse.isLicensedRacer ? "✅ 允许出战所有官方德比大奖赛" : "⚠️ 未获执照前仅限内部试跑训练", 310, -16, 11, licenseCol, HorizontalTextAlignment.RIGHT);
+
+                // B. 【400m 极速直线试跑大挑战区】(Y = 118, H = 230, W = 660)
+                const trialBox = this.grandSaloonBox(stableBox, 0, 118, 660, 230, 10, WestColors.WOOD_DARK, WestColors.BRASS_FRAME);
+                this.text(trialBox, "⏱️ 400m 直线极速资格试跑挑战", 0, 78, 18, WestColors.GOLD_BRIGHT);
+                this.text(trialBox, "试跑将在怀俄明标准 400m 硬质泥地直道举行，全面检验赛马前程爆发力与直道抗压极速！", 0, 46, 12, WestColors.PARCHMENT_LIGHT);
+                this.text(trialBox, "考核合格线为 24.50 秒，跑进标准线即可由治安公署正式签发官方德比职业巡回赛出赛执照！", 0, 20, 11, WestColors.GOLD_METALLIC);
+
+                this.saloonButton(
+                    trialBox,
+                    "🚀 立即开启 400m 资格考核试跑 ➔",
+                    0,
+                    -46,
+                    460,
+                    52,
+                    () => { this.openRanchTrialModal(horse); },
+                    !horse.isLicensedRacer,
+                    17,
+                );
+
+                // C. 生涯战绩与保底回购卡 (Y = -58, H = 100, W = 660)
+                const careerCard = this.wantedPosterBox(stableBox, 0, -58, 660, 100, 6);
+                const winRate = horse.totalCareerRaces > 0 ? ((horse.totalCareerWins / horse.totalCareerRaces) * 100).toFixed(1) : "0.0";
+                this.text(careerCard, `📜 职业生涯名册: ${horse.totalCareerRaces} 战 ${horse.totalCareerWins} 胜 (胜率: ${winRate}%)  ·  累计奖金: ${this.formatMoney(horse.accumulatedPurse)} 金币`, 0, 24, 12, WestColors.INK_DARK);
+
+                this.saloonButton(
+                    careerCard,
+                    "🏷️ 申请公会保底回购 (BUYBACK)",
+                    -160,
+                    -16,
+                    300,
+                    46,
+                    () => { this.openRanchBuybackModal(horse); },
+                    false,
+                    13,
+                );
+
+                this.saloonButton(
+                    careerCard,
+                    "🏇 奔赴德比大奖赛 (DERBY) ➔",
+                    160,
+                    -16,
+                    300,
+                    46,
+                    () => { void this.show("race"); },
+                    horse.isLicensedRacer,
+                    13,
+                );
+
+                // D. 公会存证小卡 (Y = -145, H = 40, W = 660)
+                const ruleCard = this.wantedPosterBox(stableBox, 0, -145, 660, 40, 6);
+                this.text(ruleCard, "🐎 怀俄明柯尔特特区马帮联合公证署监察 · 考核成绩与赛绩链上实时存证 · 纯血保障权益不可篡改", 0, 0, 11, WestColors.INK_MUTED);
+
+                // E. 快速跳转按钮 (Y = -195, H = 42, W = 660)
+                const trialNav = this.wantedPosterBox(stableBox, 0, -195, 660, 42, 6);
+                this.saloonButton(
+                    trialNav,
+                    "🌟 返回 2D 名驹大展台 ➔",
+                    0,
+                    0,
+                    360,
+                    42,
+                    () => {
+                        this.ranchSubTab = "STAGE_2D";
+                        void this.show("stable");
+                    },
+                    false,
+                    14,
+                );
+            }
 
         } catch (err) {
             this.text(stableBox, this.errorMessage(err, "纯血马房加载失败"), 0, 50, 18, WestColors.BANDANA_RED);
@@ -8126,7 +9806,7 @@ export class GameApp extends Component {
             ];
 
         let busy = false;
-        tiers.forEach((item) => {
+        tiers.forEach((item, idx) => {
             const card = this.wantedPosterBox(stableBox, 0, item.y, 660, 92, 8);
 
             // 幼驹 2D 活体徽章节点（点击查看小马驹三视图与成长发育）
@@ -8148,17 +9828,18 @@ export class GameApp extends Component {
             fg.stroke();
             this.text(foalIconNode, "🍼", 0, 0, 18);
             const foalBtn = foalIconNode.addComponent(Button);
+            const previewHorseNo = Math.min(20, (idx * 5) + 1);
             foalBtn.node.on(Button.EventType.CLICK, () => {
-                HorseGalleryModal.show(1, this.node);
+                HorseGalleryModal.show(previewHorseNo, this.node, FoalGrowthStage.Foal);
             }, this);
 
             this.text(card, `🐴 ${item.name} (${item.tier})`, -95, 24, 16, WestColors.INK_DARK);
             this.text(card, `潜能基线: ${item.potential} · 描述: ${item.desc}`, -95, -2, 12, WestColors.INK_MUTED);
-            this.text(card, `公会官方标价: ${this.formatMoney(item.price)} 🪙`, -95, -24, 13, WestColors.GOLD_METALLIC);
+            this.text(card, `公会官方标价: ${this.formatMoney(item.price)} 金币`, -95, -24, 13, WestColors.GOLD_METALLIC);
 
             this.saloonButton(
                 card,
-                `认领入厩 (${item.price}🪙)`,
+                `认领入厩 (${item.price} 金币)`,
                 210,
                 0,
                 180,
@@ -8198,16 +9879,45 @@ export class GameApp extends Component {
     /** 弹窗：投喂饲料 (FEED)。从数据库动态目录加载。 */
     private async openRanchFeedModal(horse: RanchHorseDto): Promise<void> {
         const root = this.pageRoot!;
-        const mask = this.box(root, 360, 640, 720, 1280, new Color(0, 0, 0, 220), 0);
-        this.bindClick(mask, () => mask.destroy());
+        const mask = this.createModalMask(root, new Color(0, 0, 0, 220));
         const modalBox = this.grandSaloonBox(mask, 0, 0, 660, 680, 16, WestColors.WOOD_DARK, WestColors.BRASS_FRAME);
+        this.attachModalShield(mask, modalBox, () => mask.destroy());
         this.addModalCloseBtn(modalBox, 660, 680, () => mask.destroy());
 
-        this.text(modalBox, `🌾 为【${horse.customName}】选配草粮`, 0, 290, 22, WestColors.GOLD_BRIGHT);
-        this.text(modalBox, `当前饱腹: ${horse.hungerLevel}/100 · 状态: ${horse.conditionLevel}/100`, 0, 255, 14, WestColors.PARCHMENT_LIGHT);
+        this.text(modalBox, `🌾 为【${horse.customName}】选配草粮`, 0, 292, 22, WestColors.GOLD_BRIGHT);
+        this.text(modalBox, `当前饱腹: ${horse.hungerLevel}/100 · 状态: ${horse.conditionLevel}/100`, 0, 258, 14, WestColors.PARCHMENT_LIGHT);
+
+        // 国人习惯一键快捷：一键科学投喂
+        this.saloonButton(
+            modalBox,
+            "🌾 一键科学饱食 (智能投喂至安全高能区间)",
+            0,
+            218,
+            460,
+            34,
+            async () => {
+                try {
+                    const targetFeed = horse.hungerLevel <= 50 ? "FEED_ALFALFA" : "FEED_TIMOTHY";
+                    const res = await ApiClient.post<{ code: number; message: string; data: FeedResultDto }>(
+                        "/api/ranch/feed",
+                        { horseId: horse.id, feedCode: targetFeed },
+                    );
+                    const updated = res.data?.data || res.data;
+                    this.showToast(`🌾 一键投喂成功！饱腹升至 ${updated.newHunger}，健康平稳！`, WestColors.GOLD_BRIGHT);
+                    WestAudio.playHorseNeigh("COMMON");
+                    await this.loadPlayer();
+                    mask.destroy();
+                    void this.show("stable");
+                } catch (err) {
+                    this.showToast(this.errorMessage(err, "投喂失败"), WestColors.BANDANA_RED);
+                }
+            },
+            true,
+            13,
+        );
 
         const catalog = await this.fetchRanchCatalog();
-        const feedY = [170, 75, -20, -115];
+        const feedY = [154, 76, -2, -80];
         const feeds = catalog?.feeds && catalog.feeds.length > 0
             ? catalog.feeds.slice(0, 4).map((f) => ({
                 type: f.feedCode,
@@ -8227,8 +9937,8 @@ export class GameApp extends Component {
         let feedBusy = false;
         feeds.forEach((f, idx) => {
             const y = feedY[idx];
-            const itemBox = this.wantedPosterBox(modalBox, 0, y, 610, 76, 8);
-            this.text(itemBox, `${f.name} · ${f.cost}🪙`, -90, 16, 15, WestColors.INK_DARK);
+            const itemBox = this.wantedPosterBox(modalBox, 0, y, 610, 70, 8);
+            this.text(itemBox, `${f.name} · ${f.cost} 金币`, -90, 15, 14, WestColors.INK_DARK);
             this.text(itemBox, `饱腹+${f.sat} EXP+${f.exp} · ${f.desc}`, -90, -14, 11, WestColors.INK_MUTED);
 
             this.saloonButton(
@@ -8237,7 +9947,7 @@ export class GameApp extends Component {
                 215,
                 0,
                 110,
-                42,
+                40,
                 async () => {
                     if (feedBusy) return;
                     feedBusy = true;
@@ -8265,10 +9975,10 @@ export class GameApp extends Component {
         });
 
         // 警告文案
-        this.text(modalBox, "⚠️ 饱腹度上限为 100。最近 3 小时连续投喂精饲料将有 25% 几率引发积食微恙！", 0, -195, 12, WestColors.BANDANA_RED);
+        this.text(modalBox, "⚠️ 饱腹度上限为 100。最近 3 小时连续投喂精饲料将有 25% 几率引发积食微恙！", 0, -160, 12, WestColors.BANDANA_RED);
 
         // 关闭按钮
-        this.saloonButton(modalBox, "🚪 关闭 (CLOSE)", 0, -260, 240, 46, () => {
+        this.saloonButton(modalBox, "🚪 关闭 (CLOSE)", 0, -230, 240, 44, () => {
             mask.destroy();
         });
     }
@@ -8281,9 +9991,9 @@ export class GameApp extends Component {
         }
 
         const root = this.pageRoot!;
-        const mask = this.box(root, 360, 640, 720, 1280, new Color(0, 0, 0, 220), 0);
-        this.bindClick(mask, () => mask.destroy());
+        const mask = this.createModalMask(root, new Color(0, 0, 0, 220));
         const modalBox = this.grandSaloonBox(mask, 0, 0, 660, 680, 16, WestColors.WOOD_DARK, WestColors.BRASS_FRAME);
+        this.attachModalShield(mask, modalBox, () => mask.destroy());
         this.addModalCloseBtn(modalBox, 660, 680, () => mask.destroy());
 
         this.text(modalBox, `🏇 四大专项训练 · 【${horse.customName}】`, 0, 290, 22, WestColors.GOLD_BRIGHT);
@@ -8310,7 +10020,7 @@ export class GameApp extends Component {
         trainings.forEach((t, idx) => {
             const y = trainY[idx];
             const itemBox = this.wantedPosterBox(modalBox, 0, y, 610, 78, 8);
-            this.text(itemBox, `${t.name} · ${t.cost}🪙`, -90, 18, 15, WestColors.INK_DARK);
+            this.text(itemBox, `${t.name} · ${t.cost} 金币`, -90, 18, 15, WestColors.INK_DARK);
             this.text(itemBox, `收益: ${t.effect} · ${t.desc}`, -90, -14, 11, WestColors.INK_MUTED);
 
             this.saloonButton(
@@ -8358,16 +10068,44 @@ export class GameApp extends Component {
         }
 
         const root = this.pageRoot!;
-        const mask = this.box(root, 360, 640, 720, 1280, new Color(0, 0, 0, 220), 0);
-        this.bindClick(mask, () => mask.destroy());
+        const mask = this.createModalMask(root, new Color(0, 0, 0, 220));
         const modalBox = this.grandSaloonBox(mask, 0, 0, 660, 730, 16, WestColors.WOOD_DARK, WestColors.BRASS_FRAME);
+        this.attachModalShield(mask, modalBox, () => mask.destroy());
         this.addModalCloseBtn(modalBox, 660, 730, () => mask.destroy());
 
-        this.text(modalBox, `🛁 医护理疗中心 · 【${horse.customName}】`, 0, 320, 22, WestColors.GOLD_BRIGHT);
-        this.text(modalBox, `蹄磨损: ${horse.hoofWear}/100 · 健康: ${horse.healthPoints}/100 · 亲密: ${horse.intimacyLevel}/100`, 0, 285, 14, WestColors.PARCHMENT_LIGHT);
+        this.text(modalBox, `🛁 医护理疗中心 · 【${horse.customName}】`, 0, 322, 22, WestColors.GOLD_BRIGHT);
+        this.text(modalBox, `蹄磨损: ${horse.hoofWear}/100 · 健康: ${horse.healthPoints}/100 · 亲密: ${horse.intimacyLevel}/100`, 0, 288, 14, WestColors.PARCHMENT_LIGHT);
+
+        // 国人习惯一键快捷：一键全套理疗
+        this.saloonButton(
+            modalBox,
+            "🌿 一键全套理疗 (直接调理至【🔥绝好调】· 解除伤病)",
+            0,
+            248,
+            460,
+            34,
+            async () => {
+                try {
+                    const targetCare = (horse.subStatus === "SICK" || horse.subStatus === "COLIC") ? "PROBIOTIC" : "PHYSIOMUD";
+                    await ApiClient.post<CareResultDto>("/api/ranch/care", {
+                        horseId: horse.id,
+                        careType: targetCare,
+                    });
+                    this.showToast(`✨ 一键理疗完成！爱驹状态全满，进入【🔥绝好调】！`, WestColors.GOLD_BRIGHT);
+                    WestAudio.playHorseNeigh("COMMON");
+                    await this.loadPlayer();
+                    mask.destroy();
+                    void this.show("stable");
+                } catch (err) {
+                    this.showToast(this.errorMessage(err, "护理失败"), WestColors.BANDANA_RED);
+                }
+            },
+            true,
+            13,
+        );
 
         const catalog = await this.fetchRanchCatalog();
-        const careY = [215, 130, 45, -40, -125];
+        const careY = [186, 118, 50, -18, -86];
         const cares = catalog?.cares && catalog.cares.length > 0
             ? catalog.cares.slice(0, 5).map((c) => ({
                 type: c.careType,
@@ -8386,9 +10124,9 @@ export class GameApp extends Component {
         let careBusy = false;
         cares.forEach((c, idx) => {
             const y = careY[idx];
-            const itemBox = this.wantedPosterBox(modalBox, 0, y, 610, 72, 8);
-            this.text(itemBox, `${c.name} · ${c.cost}🪙`, -90, 15, 15, WestColors.INK_DARK);
-            this.text(itemBox, c.desc, -90, -14, 12, WestColors.INK_MUTED);
+            const itemBox = this.wantedPosterBox(modalBox, 0, y, 610, 62, 8);
+            this.text(itemBox, `${c.name} · ${c.cost} 金币`, -90, 13, 14, WestColors.INK_DARK);
+            this.text(itemBox, c.desc, -90, -12, 11, WestColors.INK_MUTED);
 
             this.saloonButton(
                 itemBox,
@@ -8396,7 +10134,7 @@ export class GameApp extends Component {
                 215,
                 0,
                 110,
-                38,
+                36,
                 async () => {
                     if (careBusy) return;
                     careBusy = true;
@@ -8422,7 +10160,175 @@ export class GameApp extends Component {
         });
 
         // 关闭按钮
-        this.saloonButton(modalBox, "🚪 关闭 (CLOSE)", 0, -285, 240, 46, () => {
+        this.saloonButton(modalBox, "🚪 关闭 (CLOSE)", 0, -250, 240, 44, () => {
+            mask.destroy();
+        });
+    }
+
+    /** 弹窗：名驹 2D 动作与姿态互动演练台 (基于设计图四大类 40+ 项动作二次创作) */
+    private openHorse2DActionDrawer(horse: RanchHorseDto, parentLiveVisual?: HorseVisual2D): void {
+        const root = this.pageRoot!;
+        const mask = this.createModalMask(root, new Color(0, 0, 0, 220));
+        const modalBox = this.grandSaloonBox(mask, 0, 0, 680, 840, 16, WestColors.WOOD_DARK, WestColors.BRASS_FRAME);
+        this.attachModalShield(mask, modalBox, () => mask.destroy());
+        this.addModalCloseBtn(modalBox, 680, 840, () => mask.destroy());
+
+        // 标题栏
+        this.text(modalBox, `🐴 【${horse.customName}】2D 姿态与动作互动演练台`, 0, 380, 20, WestColors.GOLD_BRIGHT);
+        this.text(modalBox, "四大类 40+ 项写实标准姿态二次创作程序化动效 · 实时骨骼位移演化", 0, 350, 12, WestColors.PARCHMENT_LIGHT);
+
+        // 1. 顶部大型 2D 互动放牧舞台 (Paddock Stage)
+        const stageNode = new Node("DrawerPaddockStage");
+        stageNode.layer = modalBox.layer || Layers.Enum.UI_2D;
+        modalBox.addChild(stageNode);
+        stageNode.setPosition(0, 240, 0);
+        stageNode.addComponent(UITransform).setContentSize(620, 180);
+
+        const sg = stageNode.addComponent(Graphics);
+        // 原木牧场外框
+        sg.fillColor = new Color(55, 38, 25, 250);
+        sg.roundRect(-310, -90, 620, 180, 10);
+        sg.fill();
+        // 蓝天渐变与阳光
+        sg.fillColor = new Color(175, 212, 235, 255);
+        sg.rect(-304, 0, 608, 84);
+        sg.fill();
+        // 绿茵草甸
+        sg.fillColor = new Color(118, 155, 68, 255);
+        sg.rect(-304, -84, 608, 84);
+        sg.fill();
+        // 牧场原木三道横向围栏
+        sg.strokeColor = new Color(145, 95, 55, 255);
+        sg.lineWidth = 3.0;
+        sg.moveTo(-304, 30);
+        sg.lineTo(304, 30);
+        sg.moveTo(-304, 0);
+        sg.lineTo(304, 0);
+        sg.moveTo(-304, -30);
+        sg.lineTo(304, -30);
+        sg.stroke();
+        // 烫金黄铜外框
+        sg.strokeColor = WestColors.BRASS_FRAME;
+        sg.lineWidth = 2.4;
+        sg.roundRect(-304, -84, 608, 168, 8);
+        sg.stroke();
+
+        // 挂载 2D 互动马匹组件 (放大 2.2x 雄壮展现)
+        const horseNo = (Math.abs(Number(this.selectedRanchHorseId || 1) - 1) % 20) + 1;
+        const horseNode = new Node("DrawerHorseVisual");
+        horseNode.layer = stageNode.layer || Layers.Enum.UI_2D;
+        stageNode.addChild(horseNode);
+        horseNode.setPosition(0, -20, 0);
+        const drawerVisual = horseNode.addComponent(HorseVisual2D);
+        drawerVisual.isPaddockMode = true;
+        drawerVisual.setDisplayScale(2.2);
+        const drawerStage = HorseAssetRegistry.parseGrowthStage(horse.growthStage);
+        if (drawerStage !== FoalGrowthStage.Adult) {
+            drawerVisual.setFoalStage(horseNo, drawerStage);
+        } else {
+            drawerVisual.setHorseNo(horseNo);
+        }
+        drawerVisual.setAction("Stand", 1.0, "悠然待机");
+
+        // 2. 动作详细解剖描述卡片 (Y = 115)
+        const descBox = this.wantedPosterBox(modalBox, 0, 115, 620, 52, 6);
+        const descLbl = this.text(descBox, "💡 点击下方动作按钮或直接触摸轻抚上方名驹，即时触发亲密互动与二次创作位移表演！", 0, 0, 12, WestColors.INK_DARK);
+
+        // 3. 四大类分类标签栏 (Y = 65)
+        const categories: { id: "Movement" | "Daily" | "Social" | "Racing"; name: string }[] = [
+            { id: "Movement", name: "🚶 步态移动 (8项)" },
+            { id: "Daily", name: "🌾 日常生理 (11项)" },
+            { id: "Social", name: "💖 情绪社交 (14项)" },
+            { id: "Racing", name: "⚡ 骑乘竞技 (11项)" },
+        ];
+        let currentCat: "Movement" | "Daily" | "Social" | "Racing" = "Movement";
+
+        // 动作按钮滚动/平铺容器 (Y = -125, H = 310)
+        const actionGridNode = new Node("ActionGridContainer");
+        actionGridNode.layer = modalBox.layer || Layers.Enum.UI_2D;
+        modalBox.addChild(actionGridNode);
+        actionGridNode.setPosition(0, -125, 0);
+        actionGridNode.addComponent(UITransform).setContentSize(620, 310);
+
+        const tabBtns: Node[] = [];
+
+        const renderActionButtons = () => {
+            actionGridNode.removeAllChildren();
+
+            const allActions = Object.values(HorseVisual2D.ACTIONS_CATALOG);
+            const filtered = allActions.filter(a => a.category === currentCat);
+
+            const cols = 4;
+            const btnW = 145;
+            const btnH = 46;
+            const startX = -225;
+            const startY = 120;
+            const gapX = 150;
+            const gapY = 52;
+
+            filtered.forEach((act, idx) => {
+                const col = idx % cols;
+                const row = Math.floor(idx / cols);
+                const x = startX + col * gapX;
+                const y = startY - row * gapY;
+
+                const isActActive = drawerVisual.getCurrentAction() === act.id;
+
+                this.saloonButton(
+                    actionGridNode,
+                    `${act.icon} ${act.nameZh}`,
+                    x,
+                    y,
+                    btnW,
+                    btnH,
+                    () => {
+                        drawerVisual.setAction(act.id, 1.2, act.nameZh);
+                        if (parentLiveVisual && parentLiveVisual.isValid) {
+                            parentLiveVisual.setAction(act.id, 1.2, act.nameZh);
+                        }
+                        descLbl.string = `【${act.nameZh} (${act.nameEn})】: ${act.description}`;
+                        this.showToast(`${act.icon} 正在表演：${act.nameZh} (${act.nameEn})`, WestColors.GOLD_BRIGHT);
+                        WestHaptics.tap();
+                        WestAudio.playLeatherPress("COMMON");
+                        renderActionButtons();
+                    },
+                    isActActive,
+                    12,
+                );
+            });
+        };
+
+        // 绘制 Tab 按钮
+        categories.forEach((cat, idx) => {
+            const tx = -225 + idx * 150;
+            const tb = this.saloonButton(
+                modalBox,
+                cat.name,
+                tx,
+                65,
+                142,
+                34,
+                () => {
+                    WestHaptics.tap();
+                    currentCat = cat.id;
+                    tabBtns.forEach((n, i) => {
+                        const bgG = n.getComponent(Graphics);
+                        if (bgG) {
+                            bgG.fillColor = categories[i].id === currentCat ? WestColors.WOOD_DARK : WestColors.WOOD_MEDIUM;
+                        }
+                    });
+                    renderActionButtons();
+                },
+                cat.id === currentCat,
+                12,
+            );
+            tabBtns.push(tb);
+        });
+
+        renderActionButtons();
+
+        // 底部关闭按钮 (Y = -375)
+        this.saloonButton(modalBox, "🚪 关闭演练台 (CLOSE)", 0, -375, 280, 46, () => {
             mask.destroy();
         });
     }
@@ -8435,9 +10341,9 @@ export class GameApp extends Component {
         }
 
         const root = this.pageRoot!;
-        const mask = this.box(root, 360, 640, 720, 1280, new Color(0, 0, 0, 220), 0);
-        this.bindClick(mask, () => mask.destroy());
+        const mask = this.createModalMask(root, new Color(0, 0, 0, 220));
         const modalBox = this.grandSaloonBox(mask, 0, 0, 660, 720, 16, WestColors.WOOD_DARK, WestColors.BRASS_FRAME);
+        this.attachModalShield(mask, modalBox, () => mask.destroy());
         this.addModalCloseBtn(modalBox, 660, 720, () => mask.destroy());
 
         this.text(modalBox, `🛡️ 马具装配 · 【${horse.customName}】`, 0, 315, 22, WestColors.GOLD_BRIGHT);
@@ -8594,16 +10500,16 @@ export class GameApp extends Component {
         }
 
         const root = this.pageRoot!;
-        const mask = this.box(root, 360, 640, 720, 1280, new Color(0, 0, 0, 220), 0);
-        this.bindClick(mask, () => mask.destroy());
+        const mask = this.createModalMask(root, new Color(0, 0, 0, 220));
         const modalBox = this.grandSaloonBox(mask, 0, 0, 660, 720, 16, WestColors.WOOD_DARK, WestColors.BRASS_FRAME);
+        this.attachModalShield(mask, modalBox, () => mask.destroy());
         this.addModalCloseBtn(modalBox, 660, 720, () => mask.destroy());
 
         this.text(modalBox, `⏱️ 400m 物理模拟资格试跑 · 【${horse.customName}】`, 0, 310, 20, WestColors.GOLD_BRIGHT);
 
         const card = this.wantedPosterBox(modalBox, 0, 150, 610, 230, 10);
         this.text(card, "📜 怀俄明公会赛马职业资格考核公约", 0, 85, 16, WestColors.INK_DARK);
-        this.text(card, "跑进 24.50 秒以内即可获得正式职业赛马执照 (通过后缴纳 200🪙 证书规费)！", 0, 55, 13, WestColors.BANDANA_RED);
+        this.text(card, "跑进 24.50 秒以内即可获得正式职业赛马执照 (通过后缴纳 200 金币 证书规费)！", 0, 55, 13, WestColors.BANDANA_RED);
 
         const isLvOk = horse.level >= 20;
         const isHealthOk = horse.healthPoints >= 100 && horse.hoofWear < 50;
@@ -8619,7 +10525,7 @@ export class GameApp extends Component {
 
         // 动态展示区域容器
         const trialResultBox = this.chalkboardBox(modalBox, 0, -30, 610, 100, 8);
-        const tipLabel = this.text(trialResultBox, isEligible ? "已达准入条件！单次试跑消耗 15 点精力、5% 蹄铁磨损、3 调子 (通过核发证书扣 200 🪙)\\n点击下方【启闸试跑】即刻测算 400m 成绩！" : "⚠️ 尚未满足全部硬性准入条件 (需 Lv.20+、健康度 100 且配齐三件套)！", 0, 0, 13, isEligible ? WestColors.GOLD_BRIGHT : WestColors.PARCHMENT_LIGHT);
+        const tipLabel = this.text(trialResultBox, isEligible ? "已达准入条件！单次试跑消耗 15 点精力、5% 蹄铁磨损、3 调子 (通过核发证书扣 200 金币)\\n点击下方【启闸试跑】即刻测算 400m 成绩！" : "⚠️ 尚未满足全部硬性准入条件 (需 Lv.20+、健康度 100 且配齐三件套)！", 0, 0, 13, isEligible ? WestColors.GOLD_BRIGHT : WestColors.PARCHMENT_LIGHT);
 
         // 启闸按钮
         this.saloonButton(
@@ -8638,10 +10544,7 @@ export class GameApp extends Component {
                     tipLabel.string = "🏇 启跑闸门开启！赛马正在 400 米直道飞驰测算中...";
                     WestAudio.playHorseNeigh("COMMON");
 
-                    const res = await ApiClient.post<TrialResultDto>(
-                        "/api/ranch/qualification-trial",
-                        { horseId: horse.id },
-                    );
+                    const res = await ApiClient.runTrial(horse.id);
                     const trial = res.data;
                     await this.loadPlayer();
 
@@ -8682,9 +10585,9 @@ export class GameApp extends Component {
         }
 
         const root = this.pageRoot!;
-        const mask = this.box(root, 360, 640, 720, 1280, new Color(0, 0, 0, 220), 0);
-        this.bindClick(mask, () => mask.destroy());
+        const mask = this.createModalMask(root, new Color(0, 0, 0, 220));
         const modalBox = this.grandSaloonBox(mask, 0, 0, 660, 520, 16, WestColors.WOOD_DARK, WestColors.BRASS_FRAME);
+        this.attachModalShield(mask, modalBox, () => mask.destroy());
         this.addModalCloseBtn(modalBox, 660, 520, () => mask.destroy());
 
         this.text(modalBox, `🏷️ 公会官方保底回购`, 0, 210, 22, WestColors.GOLD_BRIGHT);
@@ -8703,14 +10606,14 @@ export class GameApp extends Component {
         const baseVal = basePrices[horse.pedigreeTier] || 150;
         const totalEstimate = baseVal + (horse.level * 25) + (horse.totalCareerWins * 100) + Math.floor(Number(horse.accumulatedPurse) * 0.05);
 
-        this.text(card, `公会公证保底回购款: ${this.formatMoney(totalEstimate)} 🪙`, 0, -5, 18, WestColors.GOLD_METALLIC);
+        this.text(card, `公会公证保底回购款: ${this.formatMoney(totalEstimate)} 金币`, 0, -5, 18, WestColors.GOLD_METALLIC);
         this.text(card, "确认出售后，该马匹将由公会官方统一回收入库并永久退役，", 0, -45, 13, WestColors.BANDANA_RED);
         this.text(card, "回购款项将即刻打入您的钱包资产，所有已装配马具将自动归还仓库！", 0, -70, 13, WestColors.BANDANA_RED);
 
         // 确认出售按钮
         this.saloonButton(
             modalBox,
-            `确认出售并换取 ${totalEstimate}🪙`,
+            `确认出售并换取 ${totalEstimate} 金币`,
             0,
             -95,
             300,
@@ -8750,7 +10653,7 @@ export class GameApp extends Component {
             }>(`/api/stable/horses?page=${this.stablePage}&pageSize=${pageSize}`);
 
             const horseY = [340, 260, 180, 100, 20, -60];
-            const horses = response.data.items ?? [];
+            const horses = this.safeArray<HorseCatalogItemDto>(response?.data?.items ?? response?.data);
             horses.forEach((horse, index) => {
                 const y = horseY[index];
                 const card = this.wantedPosterBox(stableBox, 0, y, 660, 68, 8);
@@ -8777,7 +10680,7 @@ export class GameApp extends Component {
 
                 this.saloonButton(
                     card,
-                    "赞助(1000🪙)",
+                    "赞助(1000 金币)",
                     275,
                     0,
                     96,
@@ -8880,8 +10783,8 @@ export class GameApp extends Component {
 
             // 待提领出战分红卡片 (Y = 340, H = 76)
             const divCard = this.woodBox(stableBox, 0, 340, 660, 76, 10, WestColors.LEATHER_SADDLE, WestColors.GOLD_METALLIC);
-            this.text(divCard, `🪙 待提领赞助分红: ${this.formatMoney(unclaimed)} 🪙`, -120, 14, 18, WestColors.GOLD_BRIGHT);
-            this.text(divCard, "前三名获公证分红: 🥇200🪙 · 🥈100🪙 · 🥉50🪙", -120, -14, 13, WestColors.PARCHMENT_LIGHT);
+            this.text(divCard, `💰 待提领赞助分红: ${this.formatMoney(unclaimed)} 金币`, -120, 14, 18, WestColors.GOLD_BRIGHT);
+            this.text(divCard, "前三名获公证分红: 🥇200 金币 · 🥈100 金币 · 🥉50 金币", -120, -14, 13, WestColors.PARCHMENT_LIGHT);
 
             this.saloonButton(
                 divCard,
@@ -8894,7 +10797,7 @@ export class GameApp extends Component {
                     try {
                         const claimRes = await ApiClient.post<{ code: number; message?: string; data?: { claimedAmount: number } }>("/api/stable/claim-dividends", {});
                         const claimed = claimRes.data?.data?.claimedAmount ?? 0;
-                        this.showToast(`🎉 成功提领 ${this.formatMoney(claimed)} 🪙 入库！`, WestColors.GOLD_BRIGHT);
+                        this.showToast(`🎉 成功提领 ${this.formatMoney(claimed)} 金币 入库！`, WestColors.GOLD_BRIGHT);
                         WestAudio.playGoldCascade("COMMON");
                         await this.loadPlayer();
                         void this.show("stable");
@@ -8909,7 +10812,7 @@ export class GameApp extends Component {
             if (myHorses.length === 0) {
                 const emptyCard = this.wantedPosterBox(stableBox, 0, 140, 660, 220, 10);
                 this.text(emptyCard, "🐴 暂无赞助出赛的名驹", 0, 50, 22, WestColors.INK_DARK);
-                this.text(emptyCard, "请切换至【名驹谱系名录】挑选并赞助良驹（1,000🪙），", 0, 10, 15, WestColors.INK_MUTED);
+                this.text(emptyCard, "请切换至【名驹谱系名录】挑选并赞助良驹（1,000 金币），", 0, 10, 15, WestColors.INK_MUTED);
                 this.text(emptyCard, "享受名驹出赛前三名分红收益，并可每日喂养加州胡萝卜维持绝好调！", 0, -20, 13, WestColors.INK_MUTED);
 
                 this.saloonButton(
@@ -8935,11 +10838,11 @@ export class GameApp extends Component {
 
                     this.text(card, `🏇 ${horse.customName} (${horse.nameZh}) · 状态: ${horse.conditionLevel}/100 (${condDesc})`, -115, 20, 16, WestColors.INK_DARK);
                     this.text(card, `今日抚育: ${horse.careCountToday} 次 · 出战: ${horse.totalCareerRaces} 场 · 夺冠: ${horse.totalCareerWins} 次`, -115, -4, 13, WestColors.INK_MUTED);
-                    this.text(card, `历史累计赢得奖金分红: ${this.formatMoney(horse.accumulatedPurse)} 🪙`, -115, -24, 12, WestColors.DESERT_SAGE);
+                    this.text(card, `历史累计赢得奖金分红: ${this.formatMoney(horse.accumulatedPurse)} 金币`, -115, -24, 12, WestColors.DESERT_SAGE);
 
                     this.saloonButton(
                         card,
-                        "🥕 喂胡萝卜(50🪙)",
+                        "🥕 喂胡萝卜(50 金币)",
                         205,
                         14,
                         190,
@@ -8989,14 +10892,14 @@ export class GameApp extends Component {
 
     /** 马匹详细资料弹窗。 */
     private async buildHorseDetailModal(root: Node, horseId: number): Promise<void> {
-        const mask = this.box(root, 360, 640, 720, 1280, new Color(0, 0, 0, 220), 0);
+        const mask = this.createModalMask(root, new Color(0, 0, 0, 220));
         const closeModal = () => {
             this.selectedHorseCatalogId = null;
             mask.destroy();
             void this.show("stable");
         };
-        this.bindClick(mask, closeModal);
         const modalBox = this.grandSaloonBox(mask, 0, 0, 660, 720, 16, WestColors.WOOD_DARK, WestColors.BRASS_FRAME);
+        this.attachModalShield(mask, modalBox, closeModal);
         this.addModalCloseBtn(modalBox, 660, 720, closeModal);
 
         this.text(modalBox, `🐴 ${I18n.t("stable.detailTitle")}`, 0, 310, 24, WestColors.GOLD_BRIGHT);
@@ -9117,7 +11020,7 @@ export class GameApp extends Component {
 
         try {
             const response = await ApiClient.get<CharacterDto[]>("/api/characters");
-            const characters = response.data.slice(0, 4);
+            const characters = this.safeArray<CharacterDto>(response?.data).slice(0, 4);
 
             const cardY = [365, 225, 85, -55];
             characters.forEach((character, index) => {
@@ -9142,9 +11045,9 @@ export class GameApp extends Component {
                 const status = character.isOwned
                     ? `Lv.${character.level} (经验 ${character.exp})`
                     : "🔒 未签约猎人";
-                this.text(card, `${trait.nick} (${character.nameZh})`, -95, 34, 16, WestColors.INK_DARK, HorizontalTextAlignment.LEFT, 260);
-                this.text(card, `${trait.trait} ${trait.desc}`, -95, 6, 11, WestColors.BANDANA_RED, HorizontalTextAlignment.LEFT, 260);
-                this.text(card, status, -95, -24, 12, WestColors.INK_MUTED, HorizontalTextAlignment.LEFT, 260);
+                this.text(card, `${trait.nick} (${character.nameZh})`, -180, 34, 16, WestColors.INK_DARK, HorizontalTextAlignment.LEFT, 200);
+                this.text(card, `${trait.trait} ${trait.desc}`, -180, 6, 11, WestColors.BANDANA_RED, HorizontalTextAlignment.LEFT, 200);
+                this.text(card, status, -180, -24, 12, WestColors.INK_MUTED, HorizontalTextAlignment.LEFT, 200);
 
                 // 右侧：黄铜机械速度表 (Speedometer) + 耐力子弹带 (Bullet Belt)
                 const speedGauge = new Node(`CharSpeedGauge${index}`);
@@ -9311,7 +11214,13 @@ export class GameApp extends Component {
             this.text(pBar, "🤠 金牌骑师胜率榜 (TOP JOCKEYS)", 0, 0, 15, WestColors.GOLD_BRIGHT);
 
             const pY = [376, 326, 276, 226, 176];
-            playersRes.data.slice(0, 5).forEach((item, index) => {
+            const pList = this.safeArray<{
+                nickname: string;
+                totalRounds: number;
+                totalWins: number;
+                winRate: number;
+            }>(playersRes?.data).slice(0, 5);
+            pList.forEach((item, index) => {
                 const y = pY[index];
                 const isMe = this.player && item.nickname === this.player.nickname;
                 const prefix = isMe ? "[★我的] " : "";
@@ -9332,7 +11241,14 @@ export class GameApp extends Component {
             this.text(hBar, "🐎 边境冠军良驹榜 (CHAMPION HORSES)", 0, 0, 15, WestColors.GOLD_BRIGHT);
 
             const hY = [74, 24, -26, -76, -126];
-            horsesRes.data.slice(0, 5).forEach((item, index) => {
+            const hList = this.safeArray<{
+                nameZh: string;
+                nameEn?: string;
+                totalRaces: number;
+                winCount: number;
+                winRate: number;
+            }>(horsesRes?.data).slice(0, 5);
+            hList.forEach((item, index) => {
                 const y = hY[index];
                 const hBox = this.wantedPosterBox(rankBox, 0, y, 660, 44, 6);
                 const hName = I18n.getLocale() === "en-US" && item.nameEn ? item.nameEn : item.nameZh;
@@ -9426,10 +11342,17 @@ export class GameApp extends Component {
                 }>("/api/player/assets").catch(() => ({ data: { cosmetics: [], items: [] } })),
             ]);
 
-            const ownedCharNames = new Set(charResponse.data.filter(c => c.isOwned).map(c => c.nameZh));
-            const ownedCosmeticNames = new Set(assetsResponse.data.cosmetics.map(c => c.nameZh));
+            const charList = this.safeArray<CharacterDto>(charResponse?.data);
+            const ownedCharNames = new Set(charList.filter(c => c && c.isOwned).map(c => c.nameZh));
+            const cosmeticList = this.safeArray<{ nameZh: string }>(assetsResponse?.data?.cosmetics);
+            const ownedCosmeticNames = new Set(cosmeticList.map(c => c.nameZh));
 
-            const prods = response.data ?? [];
+            const prods = this.safeArray<{
+                id: number;
+                titleZh: string;
+                priceAmount: number;
+                productType: string;
+            }>(response?.data);
             const prodY = [360, 272, 184, 96, 8, -80];
             prods.slice(0, 6).forEach((product, index) => {
                 const y = prodY[index];
@@ -9441,7 +11364,7 @@ export class GameApp extends Component {
                 this.text(card, `🎁 ${product.titleZh}`, -130, 16, 18, WestColors.INK_DARK);
                 this.text(card, isOwned ? "已存入边境行囊 · 无需重复购置" : "边境特许装备 · 立即提升竞技体验", -130, -14, 12, WestColors.INK_MUTED);
 
-                this.text(card, `🪙 ${this.formatMoney(product.priceAmount)}`, 85, 0, 17, WestColors.LEATHER_SADDLE);
+                this.text(card, `💰 ${this.formatMoney(product.priceAmount)}`, 85, 0, 17, WestColors.LEATHER_SADDLE);
 
                 if (isOwned) {
                     const tag = this.box(card, 235, 0, 126, 42, WestColors.WOOD_DARK, 8);
@@ -9492,7 +11415,7 @@ export class GameApp extends Component {
 
         // 金库物资与补给概要栏（充实下半区空间，杜绝死寂荒原）
         const shopSupplyCard = this.woodBox(shopBox, 0, -320, 660, 72, 8, WestColors.LEATHER_SADDLE, WestColors.GOLD_METALLIC);
-        this.text(shopSupplyCard, `🪙 当前金库可用储备: ${this.formatMoney(this.player?.balance ?? 0)} 金币`, 0, 16, 17, WestColors.GOLD_BRIGHT);
+        this.text(shopSupplyCard, `💰 当前金库可用储备: ${this.formatMoney(this.player?.balance ?? 0)} 金币`, 0, 16, 17, WestColors.GOLD_BRIGHT);
         this.text(shopSupplyCard, "荒野杂货铺提供正品马具、缰绳与猎人契约，所有装备实时入账", 0, -14, 13, WestColors.PARCHMENT_LIGHT);
 
         // 西部格言
@@ -9559,7 +11482,11 @@ export class GameApp extends Component {
 
             const items = response.data.items ?? [];
             if (items.length === 0) {
-                this.text(betsBox, isEn ? "No betting records found" : "暂无下注历史记录", 0, 100, 22, WestColors.TEXT_MUTED);
+                const emptyCard = this.wantedPosterBox(betsBox, 0, 120, 660, 240, 10);
+                this.text(emptyCard, isEn ? "📜 No Wager Archives Found" : "📜 荒野马票夹暂无押注存根", 0, 50, 22, WestColors.INK_DARK);
+                this.text(emptyCard, isEn ? "You have not placed any bets in the Wyoming Derby yet." : "你尚未在怀俄明赛场撕票下注任何赛马或玩法组合，", 0, 10, 15, WestColors.INK_MUTED);
+                this.text(emptyCard, isEn ? "Choose your steed and join the live shootout!" : "立即挑选心仪公马或自营爱驹，下注赢取丰厚派彩金币！", 0, -20, 14, WestColors.INK_MUTED);
+                this.saloonButton(emptyCard, isEn ? "🏇 Enter Derby Arena ➔" : "🏇 前往德比竞逐下注 ➔", 0, -65, 260, 44, () => { void this.show("race"); }, true, 15);
             } else {
                 const betY = [355, 275, 195, 115, 35, -45, -125];
                 items.slice(0, 7).forEach((bet, index) => {
@@ -9608,7 +11535,7 @@ export class GameApp extends Component {
                     );
                     this.text(
                         betCard,
-                        isEn ? `Bet: ${this.formatMoney(bet.betAmount)} 🪙  |  Payout: ${this.formatMoney(bet.netReward)} 🪙` : `下注: ${this.formatMoney(bet.betAmount)} 🪙  |  奖金: ${this.formatMoney(bet.netReward)} 🪙`,
+                        isEn ? `Bet: ${this.formatMoney(bet.betAmount)} 金币  |  Payout: ${this.formatMoney(bet.netReward)} 金币` : `下注: ${this.formatMoney(bet.betAmount)} 金币  |  奖金: ${this.formatMoney(bet.netReward)} 金币`,
                         -130,
                         -14,
                         isEn ? 13 : 14,
@@ -9673,14 +11600,14 @@ export class GameApp extends Component {
 
     /** 注单详情钻取卡片（复古牛皮纸账目）。 */
     private async buildBetDetailModal(root: Node, orderNo: string): Promise<void> {
-        const mask = this.box(root, 360, 640, 720, 1280, new Color(0, 0, 0, 220), 0);
+        const mask = this.createModalMask(root, new Color(0, 0, 0, 220));
         const closeModal = () => {
             this.selectedBetOrderNo = null;
             mask.destroy();
             void this.show("bets");
         };
-        this.bindClick(mask, closeModal);
         const modalBox = this.grandSaloonBox(mask, 0, 0, 660, 740, 16, WestColors.WOOD_DARK, WestColors.BRASS_FRAME);
+        this.attachModalShield(mask, modalBox, closeModal);
         this.addModalCloseBtn(modalBox, 660, 740, closeModal);
         const isEn = I18n.getLocale() === "en-US";
 
@@ -9705,17 +11632,17 @@ export class GameApp extends Component {
 
             this.text(sheet, `${I18n.t("bets.orderNo")}${order.orderNo}`, 0, 230, 16, WestColors.INK_MUTED);
             this.text(sheet, isEn ? `Round: #${order.roundId}  |  Target: ${targetDesc}` : `轮次: 第 ${order.roundId} 轮  |  押注标的: ${targetDesc}`, 0, 190, isEn ? 16 : 19, WestColors.INK_DARK);
-            this.text(sheet, isEn ? `Bet Amount: ${this.formatMoney(order.betAmount)} 🪙  |  Locked Odds: x${Number(order.lockedOdds).toFixed(2)}` : `${I18n.t("bets.betAmount")}${this.formatMoney(order.betAmount)} 🪙  |  锁定赔率: x${Number(order.lockedOdds).toFixed(2)}`, 0, 148, isEn ? 16 : 18, WestColors.INK_DARK);
-            this.text(sheet, isEn ? `Gross Reward: ${this.formatMoney(order.grossReward)} 🪙` : `预期毛奖: ${this.formatMoney(order.grossReward)} 🪙`, 0, 106, isEn ? 16 : 18, WestColors.INK_DARK);
+            this.text(sheet, isEn ? `Bet Amount: ${this.formatMoney(order.betAmount)} 金币  |  Locked Odds: x${Number(order.lockedOdds).toFixed(2)}` : `${I18n.t("bets.betAmount")}${this.formatMoney(order.betAmount)} 金币  |  锁定赔率: x${Number(order.lockedOdds).toFixed(2)}`, 0, 148, isEn ? 16 : 18, WestColors.INK_DARK);
+            this.text(sheet, isEn ? `Gross Reward: ${this.formatMoney(order.grossReward)} 金币` : `预期毛奖: ${this.formatMoney(order.grossReward)} 金币`, 0, 106, isEn ? 16 : 18, WestColors.INK_DARK);
             this.text(
                 sheet,
-                isEn ? `Rake Fee: ${this.formatMoney(order.feeAmount)} 🪙 (${(Number(order.feeRate) * 100).toFixed(1)}%)` : `阶梯抽成: ${this.formatMoney(order.feeAmount)} 🪙 (${(Number(order.feeRate) * 100).toFixed(1)}%)`,
+                isEn ? `Rake Fee: ${this.formatMoney(order.feeAmount)} 金币 (${(Number(order.feeRate) * 100).toFixed(1)}%)` : `阶梯抽成: ${this.formatMoney(order.feeAmount)} 金币 (${(Number(order.feeRate) * 100).toFixed(1)}%)`,
                 0,
                 64,
                 isEn ? 16 : 18,
                 WestColors.LEATHER_SADDLE,
             );
-            this.text(sheet, isEn ? `Net Bounty: ${this.formatMoney(order.netReward)} 🪙` : `最终净派彩: ${this.formatMoney(order.netReward)} 🪙`, 0, 22, isEn ? 18 : 20, WestColors.DESERT_SAGE);
+            this.text(sheet, isEn ? `Net Bounty: ${this.formatMoney(order.netReward)} 金币` : `最终净派彩: ${this.formatMoney(order.netReward)} 金币`, 0, 22, isEn ? 18 : 20, WestColors.DESERT_SAGE);
 
             const statusText = order.status === BetOrderStatus.Won
                 ? (isEn ? "Won 🏆" : "已中奖 🏆")
@@ -9836,7 +11763,7 @@ export class GameApp extends Component {
             noticeBox,
             isEn ? "🚪 Back to Lobby" : "🚪 返回大厅 (BACK)",
             0,
-            -215,
+            -225,
             320,
             48,
             () => { void this.show("lobby"); },
@@ -9845,7 +11772,7 @@ export class GameApp extends Component {
         );
 
         // 特区政令条例指导卡（充实下半区空间，消除150px死寂荒原）
-        const noticeTip = this.wantedPosterBox(noticeBox, 0, -315, 660, 68, 8);
+        const noticeTip = this.wantedPosterBox(noticeBox, 0, -325, 660, 76, 8);
         this.text(noticeTip, isEn ? "📢 Wyoming Frontier Edict Ordinance" : "📢 怀俄明柯尔特特区政令公报条例", 0, 16, isEn ? 14 : 15, WestColors.INK_DARK);
         this.text(noticeTip, isEn ? "All bulletins protected by Frontier Tribunal · Comply with urgent edicts" : "特区公报受边陲治安法庭监护 · 凡加急政令发布期间，请玩家依令行事", 0, -14, 12, WestColors.INK_MUTED);
 
@@ -9854,7 +11781,7 @@ export class GameApp extends Component {
             noticeBox,
             isEn ? "🌵 Wyoming Press Bureau · Guarding Frontier Order 🌵" : "🌵 怀俄明柯尔特特区新闻署呈送 · 守护边境公平秩序 🌵",
             0,
-            -465,
+            -435,
             14,
             WestColors.TEXT_MUTED,
         );
@@ -9873,14 +11800,24 @@ export class GameApp extends Component {
             const title = (isZh ? unreadForced.titleZh : unreadForced.titleEn) || unreadForced.titleZh || "";
             const content = (isZh ? unreadForced.contentZh : unreadForced.contentEn) || unreadForced.contentZh || "";
 
-            const mask = this.box(root, 360, 640, 720, 1280, new Color(0, 0, 0, 220), 0);
+            const mask = this.createModalMask(root, new Color(0, 0, 0, 220));
             const card = this.woodBox(mask, 0, 0, 640, 480, 16, WestColors.WOOD_DARK, WestColors.BRASS_FRAME);
 
             this.text(card, `📢 ${I18n.t("notices.forcedTitle")}`, 0, 180, 26, WestColors.BANDANA_RED);
-            this.text(card, title, 0, 130, 22, WestColors.GOLD_BRIGHT);
+            this.text(card, title, 0, 130, 22, WestColors.GOLD_BRIGHT, HorizontalTextAlignment.CENTER, 580);
 
             const contentBox = this.parchmentBox(card, 0, 20, 580, 180, 10);
-            this.text(contentBox, content, 0, 0, 18, WestColors.INK_DARK);
+            this.text(
+                contentBox,
+                content,
+                0,
+                0,
+                18,
+                WestColors.INK_DARK,
+                HorizontalTextAlignment.CENTER,
+                520,
+                Label.Overflow.RESIZE_HEIGHT,
+            );
 
             this.button(
                 card,
@@ -10171,14 +12108,19 @@ export class GameApp extends Component {
             this.text(box, this.message, 0, -156, 14, this.message.includes("失败") || this.message.includes("failed") ? WestColors.BANDANA_RED : WestColors.DESERT_SAGE);
         }
 
-        // 8. 底部行动条 (退出登录 & 返回大厅，Y = -215)
+        // 8. 怀俄明柯尔特特区安全信托与公证监管准则卡（充实下半区空间，消除250px死寂荒原）
+        const securityCard = this.wantedPosterBox(box, 0, -225, 660, 74, 8);
+        this.text(securityCard, isEn ? "🛡️ Wyoming Frontier Security Trust & Fair Play Protocol" : "🛡️ 怀俄明柯尔特特区账户安全与公证监管守则", 0, 16, isEn ? 13 : 15, WestColors.INK_DARK);
+        this.text(securityCard, isEn ? "Passkeys hashed with Argon2 · Account assets protected by Frontier Banking Guild" : "账户凭证由 Argon2 高强哈希保护 · 资产流水受边陲银行公会实时公证与监管", 0, -14, 12, WestColors.INK_MUTED);
+
+        // 9. 底部行动条 (退出登录 & 返回大厅，Y = -315)
         this.saloonButton(
             box,
             `🚪 ${I18n.t("settings.logout")}`,
             -165,
-            -215,
+            -315,
             310,
-            46,
+            48,
             () => {
                 void ApiClient.logout();
                 this.signalr?.stop();
@@ -10193,9 +12135,9 @@ export class GameApp extends Component {
             box,
             `🐎 ${I18n.t("common.backLobby")}`,
             165,
-            -215,
+            -315,
             310,
-            46,
+            48,
             () => {
                 void this.show("lobby");
             },
@@ -10203,12 +12145,16 @@ export class GameApp extends Component {
             isEn ? 13 : 15,
         );
 
-        // 9. 西部格言 (Y = -265)
+        // 10. 客服与工单联络小牌
+        const serviceCard = this.woodBox(box, 0, -385, 660, 50, 6, WestColors.WOOD_DARK, WestColors.WOOD_FRAME);
+        this.text(serviceCard, isEn ? "📬 Frontier Sheriff Telegraph & Support: support@colt-turf.wy" : "📬 怀俄明柯尔特治安公署电报信箱与客服支持: service@colt-turf.wy", 0, 0, isEn ? 12 : 13, WestColors.PARCHMENT_LIGHT);
+
+        // 11. 西部格言 (Y = -450)
         this.text(
             box,
             I18n.t("settings.frontierRule"),
             0,
-            -265,
+            -450,
             isEn ? 11 : 12,
             WestColors.TEXT_MUTED,
         );
@@ -10273,6 +12219,21 @@ export class GameApp extends Component {
         this.player = response.data;
         if (this.player && (this.player.locale === "zh-CN" || this.player.locale === "en-US")) {
             I18n.setLocale(this.player.locale as "zh-CN" | "en-US");
+        }
+        if (this.player && typeof this.player.balance === "number") {
+            this.animateBalanceChange(this.player.balance);
+        }
+    }
+
+    /** 从服务端加载最新比赛规则配置快照并缓存。 */
+    private async loadRaceConfig(): Promise<void> {
+        try {
+            const res = await ApiClient.getRaceConfig();
+            if (res.data?.rules) {
+                this.raceRules = res.data.rules;
+            }
+        } catch {
+            // 静默回退，使用内置默认规则
         }
     }
 

@@ -46,7 +46,14 @@ public sealed class RanchJobWorker(
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "RanchJobWorker 执行周期异常");
+                if (IsRedisConnectionError(ex))
+                {
+                    logger.LogWarning("RanchJobWorker 暂无法连接到 Redis 服务，任务队列消费暂停（等待 5 秒后重试）...");
+                }
+                else
+                {
+                    logger.LogError(ex, "RanchJobWorker 执行周期异常");
+                }
             }
             finally
             {
@@ -165,6 +172,7 @@ public sealed class RanchJobWorker(
         var twoHoursAgo = now.AddHours(-1);
         var activeHorses = await db.RanchHorses
             .Where(x => x.HungerLevel > 0 && x.LastDigestedAt <= twoHoursAgo && x.SubStatus != "RETIRED")
+            .OrderBy(x => x.Id)
             .Take(50)
             .ToListAsync(ct);
 
@@ -189,6 +197,7 @@ public sealed class RanchJobWorker(
     {
         var exhaustedHorses = await db.RanchHorses
             .Where(x => x.StaminaEnergy < 100 && x.SubStatus != "RETIRED" && x.SubStatus != "INJURED" && x.SubStatus != "SICK" && x.SubStatus != "PREGNANT")
+            .OrderBy(x => x.Id)
             .Take(100)
             .ToListAsync(ct);
 
@@ -205,5 +214,17 @@ public sealed class RanchJobWorker(
         {
             await db.SaveChangesAsync(ct);
         }
+    }
+
+    private static bool IsRedisConnectionError(Exception ex)
+    {
+        for (Exception? current = ex; current is not null; current = current.InnerException)
+        {
+            if (current is StackExchange.Redis.RedisConnectionException or StackExchange.Redis.RedisTimeoutException)
+                return true;
+            if (current.Message.Contains("It was not possible to connect to the redis server", StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+        return false;
     }
 }

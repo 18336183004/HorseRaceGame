@@ -86,6 +86,8 @@ const DICTIONARY: Record<Locale, Record<string, string>> = {
         "race.selectFirst": "请先选择马匹",
         "race.selectQuinella": "请先在上方 15 组矩阵中点选一组二连碰连赢组合 (如 1-2)",
         "race.minAmount": "单笔下注最小为 2",
+        "race.maxAmount": "单笔下注上限为 10,000",
+        "race.insufficientBalance": "可用余额不足，请调整下注额或前往充值",
         "race.modeWin": "🏇 独赢 (WIN)",
         "race.modePlace": "🛡️ 位置 (PLACE)",
         "race.modeQuinella": "🎰 连赢 (QUINELLA)",
@@ -146,6 +148,10 @@ const DICTIONARY: Record<Locale, Record<string, string>> = {
         "result.netReward": "净收益：",
         "result.lockedOdds": "锁定赔率：",
         "result.balanceNow": "结算后余额：",
+        "race.startRace": "再战一轮",
+        "result.winningOutcomes": "各玩法模式官方获胜一览",
+        "result.targetWager": "投:",
+        "result.actualWin": "开:",
         "result.nextRound": "下一轮比赛",
 
         // 马场
@@ -452,6 +458,8 @@ const DICTIONARY: Record<Locale, Record<string, string>> = {
         "race.selectFirst": "Please select a horse first",
         "race.selectQuinella": "Please select a quinella combination from the 15-matrix above (e.g. 1-2)",
         "race.minAmount": "Minimum bet is 2",
+        "race.maxAmount": "Maximum bet is 10,000",
+        "race.insufficientBalance": "Insufficient balance. Please adjust your bet or recharge.",
         "race.modeWin": "🏇 Win (WIN)",
         "race.modePlace": "🛡️ Place (PLACE)",
         "race.modeQuinella": "🎰 Quinella (QUINELLA)",
@@ -512,6 +520,10 @@ const DICTIONARY: Record<Locale, Record<string, string>> = {
         "result.netReward": "Net Payout: ",
         "result.lockedOdds": "Locked Odds: ",
         "result.balanceNow": "Balance: ",
+        "race.startRace": "Next Round",
+        "result.winningOutcomes": "Official Winning Outcomes by Mode",
+        "result.targetWager": "Bet:",
+        "result.actualWin": "Won:",
         "result.nextRound": "Next Round",
 
         // Stable

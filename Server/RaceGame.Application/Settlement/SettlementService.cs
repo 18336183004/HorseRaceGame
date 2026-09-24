@@ -389,9 +389,9 @@ public sealed class SettlementService(
 
             var recentRoundIds = await db.BetOrders
                 .Where(x => x.PlayerId == pId && x.RoundId < round.Id && x.SettledAt >= todayUtc)
-                .OrderByDescending(x => x.RoundId)
                 .Select(x => x.RoundId)
                 .Distinct()
+                .OrderByDescending(x => x)
                 .Take(2)
                 .ToListAsync(cancellationToken);
 

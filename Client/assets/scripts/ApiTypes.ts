@@ -177,6 +177,99 @@ export interface PlaceBetResponse {
     serverTime: string;
 }
 
+/** 下注订单条目 DTO。 */
+export interface BetOrderItemDto {
+    orderNo: string;
+    roundId: number;
+    playType?: string;
+    horseNo: number;
+    secondHorseNo?: number | null;
+    thirdHorseNo?: number | null;
+    combination?: string | null;
+    betAmount: number;
+    lockedOdds: number;
+    grossReward?: number;
+    feeRate?: number;
+    feeAmount?: number;
+    netReward: number;
+    status: number;
+    statusReason?: string | null;
+    isDoubleDown?: boolean;
+    doubleDownAmount?: number;
+}
+
+/** 订单详情与复盘信息 DTO。 */
+export interface BetDetailDto {
+    order: {
+        orderNo: string;
+        roundId: number;
+        playType?: string;
+        horseNo: number;
+        secondHorseNo?: number | null;
+        thirdHorseNo?: number | null;
+        combination?: string | null;
+        betAmount: number;
+        lockedOdds: number;
+        grossReward: number;
+        feeRate: number;
+        feeAmount: number;
+        netReward: number;
+        status: number;
+        statusReason?: string | null;
+        isDoubleDown?: boolean;
+        doubleDownAmount?: number;
+        createdAt: string;
+        settledAt?: string | null;
+    };
+    race: {
+        id: number;
+        roundNo: string;
+        state: number;
+        winnerHorseNo?: number | null;
+        horses: Array<{
+            horseNo: number;
+            horseNameZhSnapshot?: string;
+            finalRank?: number | null;
+            finishTime?: number | null;
+            isBlackHorse?: boolean | null;
+        }>;
+    } | null;
+    walletTransactions: Array<{
+        transactionType: string;
+        amount: number;
+        balanceBefore: number;
+        balanceAfter: number;
+        feeRate: number;
+        feeAmount: number;
+        createdAt: string;
+    }>;
+}
+
+/** 马匹图鉴/名册列表条目 DTO。 */
+export interface HorseCatalogItemDto {
+    horseId: number;
+    horseCode: string;
+    nameZh: string;
+    nameEn: string;
+    descriptionZh: string;
+    descriptionEn: string;
+    totalRaces: number;
+    winCount: number;
+    winRate: number;
+    rank1Count: number;
+    rank2Count: number;
+    rank3Count: number;
+    rank4Count: number;
+    rank5Count: number;
+    rank6Count: number;
+    rank1Probability: number;
+    rank2Probability: number;
+    rank3Probability: number;
+    rank4Probability: number;
+    rank5Probability: number;
+    rank6Probability: number;
+}
+
 /** 当前玩家摘要。 */
 export interface PlayerSummary {
     playerId: number;
@@ -350,6 +443,7 @@ export interface RaceEventPayload {
     remainingSeconds?: number;
     readyCount?: number;
     totalBettors?: number;
+    latencyMs?: number;
 }
 
 /** 模式三：西部纯血马房专属赛马 DTO */
@@ -573,7 +667,66 @@ export interface RaceEnvironmentDto {
     visualThemeKey?: string;
 }
 
+/** 服务端 /api/race/config 返回的规则快照公开投影（无 any）。 */
+export interface RaceRulesPublicDto {
+    configCode: string;
+    version: number;
+    minimumBetAmount: number;
+    maximumBetAmount: number;
+    initialWalletBalance: number;
+    bettingDurationSeconds: number;
+    prepareDurationSeconds: number;
+    raceDurationSeconds: number;
+    postRaceIntervalSeconds: number;
+    oddsAlgorithmVersion: string;
+    resultAlgorithmVersion: string;
+    maxRoundPayoutLiability: number;
+    referralCommissionRate: number;
+    photoFinishThresholdSeconds: number;
+    jackpotPoolCode: string;
+    jackpotContributionRate: number;
+    jackpotSeedAmount: number;
+    jackpotWinnerShareRate: number;
+    jackpotRainShareRate: number;
+    jackpotRainMinBetAmount: number;
+    inPlayWindowStartSecond: number;
+    inPlayWindowDurationSeconds: number;
+    inPlayBoostProfitRate: number;
+    isCommentaryEnabled: boolean;
+    isTipsterEnabled: boolean;
+    isReadySkipEnabled: boolean;
+    readySkipRemainingSeconds: number;
+    photoFinishLeadSeconds: number;
+    photoFinishProbability: number;
+    horseCountPerRound: number;
+    jackpotMinTriggerOdds: number;
+    payoutQuinellaRatio: number;
+    payoutPlaceRatio: number;
+    payoutExactaRatio: number;
+    blackHorseBoostMultiplier: number;
+    feeBrackets?: Array<{
+        upToAmount: number | null;
+        feeRate: number;
+    }>;
+}
+
 export interface RaceConfigDto {
-    rules: any;
+    rules: RaceRulesPublicDto;
     environments: RaceEnvironmentDto[];
 }
+
+/** 历史开奖与近期赛果记录 DTO */
+export interface RaceHistoryItemDto {
+    roundId: number;
+    roundNo: string;
+    winnerHorseNo: number | null;
+    secondHorseNo: number | null;
+    quinellaCombo: string | null;
+    isSkipped: boolean;
+    finishedAt: string;
+}
+
+export interface RaceHistoryResponseDto {
+    items: RaceHistoryItemDto[];
+}
+

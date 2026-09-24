@@ -412,6 +412,7 @@ public sealed class RaceController(
                 x.HorseNo,
                 x.PlayType,
                 x.SecondHorseNo,
+                x.ThirdHorseNo,
                 x.Combination,
                 x.BetAmount,
                 x.IsDoubleDown,

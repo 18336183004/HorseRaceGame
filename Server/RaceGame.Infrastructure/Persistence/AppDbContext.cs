@@ -356,6 +356,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
                 .HasDatabaseName("idx_race_rule_configs_active_window");
             entity.Property(x => x.ConfigCode).HasMaxLength(64);
             entity.Property(x => x.MinBetAmount).HasPrecision(20, 2);
+            entity.Property(x => x.MaxBetAmount).HasPrecision(20, 2);
             entity.Property(x => x.InitialWalletBalance).HasPrecision(20, 2);
             entity.Property(x => x.PostRaceIntervalSeconds);
             entity.Property(x => x.OddsAlgorithmVersion).HasMaxLength(32);

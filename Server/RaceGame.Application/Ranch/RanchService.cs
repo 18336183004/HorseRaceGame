@@ -220,7 +220,13 @@ public class RanchService(IGameDbContext db, RaceRuleConfigService ruleConfigSer
         string name;
         if (!string.IsNullOrWhiteSpace(customName))
         {
-            name = customName.Trim();
+            var trimmedName = customName.Trim();
+            // 马匹名称长度限制：最多 16 字符，防止超长字符串写入数据库。
+            if (trimmedName.Length > 16)
+            {
+                throw new BusinessRuleException("HORSE_NAME_TOO_LONG", "马匹名称不能超过 16 个字符");
+            }
+            name = trimmedName;
         }
         else
         {

@@ -42,3 +42,15 @@ Thumbs.db
 # ---------- 测试结果 ----------
 [Tt]est[Rr]esult*/
 [Bb]uild[Ll]og.*
+
+# ---------- Python ----------
+__pycache__/
+*.pyc
+
+# ---------- 安全敏感：本地覆盖配置（含数据库密码、JWT 密钥等） ----------
+# 使用 dotnet user-secrets 或在此文件中覆盖，切勿提交至版本控制。
+appsettings.Local.json
+appsettings.*.Local.json
+secrets.json
+.env
+.env.*

@@ -62,12 +62,12 @@ export class HorseAssetRegistry {
             id: "H02",
             horseNo: 2,
             nameZh: "翠风",
-            nameEn: "Verdant Gale",
+            nameEn: "Emerald Wind",
             coatColor: "铁青斑驳毛 (Dapple Grey)",
             breed: "轻量化耐力型纯血马 (Lightweight Stayer)",
             descriptionZh: "银白青斑相间，体态修长轻巧，头小颈弓优美，四肢关节纤细而韧性极佳，中长途耐力出众。",
-            showcaseUrl: "textures/horses/H02_VerdantGale_Showcase",
-            orthoUrl: "textures/horses/H02_VerdantGale_Ortho",
+            showcaseUrl: "textures/horses/H02_EmeraldWind_Showcase",
+            orthoUrl: "textures/horses/H02_EmeraldWind_Ortho",
             runningStyle: "STALKER"
         },
         {
@@ -110,72 +110,72 @@ export class HorseAssetRegistry {
             id: "H06",
             horseNo: 6,
             nameZh: "蓝潮",
-            nameEn: "Azure Tide",
+            nameEn: "Blue Tide",
             coatColor: "石板蓝灰沙毛 (Blue Roan)",
             breed: "大胸廓全天候赛马 (All-weather Power Horse)",
             descriptionZh: "头黑身呈深蓝灰色，胸围（Girth）深广，心肺容积巨大，推进力强劲，不畏强风与长直道。",
-            showcaseUrl: "textures/horses/H06_AzureTide_Showcase",
-            orthoUrl: "textures/horses/H06_AzureTide_Ortho",
+            showcaseUrl: "textures/horses/H06_BlueTide_Showcase",
+            orthoUrl: "textures/horses/H06_BlueTide_Ortho",
             runningStyle: "BATTLER"
         },
         {
             id: "H07",
             horseNo: 7,
             nameZh: "紫电",
-            nameEn: "Violet Flash",
+            nameEn: "Purple Lightning",
             coatColor: "深红骝微带紫光 (Liver Chestnut)",
             breed: "神经过敏型竞速马 (High-Agility Racer)",
             descriptionZh: "耳短直立转动极其敏锐，腹线紧收，四蹄黑亮硬如坚石，起跑瞬间步频极快。",
-            showcaseUrl: "textures/horses/H07_VioletFlash_Showcase",
-            orthoUrl: "textures/horses/H07_VioletFlash_Ortho",
+            showcaseUrl: "textures/horses/H07_PurpleLightning_Showcase",
+            orthoUrl: "textures/horses/H07_PurpleLightning_Ortho",
             runningStyle: "FRONT_RUNNER"
         },
         {
             id: "H08",
             horseNo: 8,
             nameZh: "暴风疾行",
-            nameEn: "Storm Gallop",
+            nameEn: "Storm Run",
             coatColor: "经典骝毛四蹄白 (Classic Bay)",
             breed: "骨量充沛型耐劳赛马 (Dense Bone Endurance)",
             descriptionZh: "四蹄踏雪，红棕身躯配黑鬃黑尾，膝与飞节粗大，在重赛道及逆风战况中耐疲劳表现卓越。",
-            showcaseUrl: "textures/horses/H08_StormGallop_Showcase",
-            orthoUrl: "textures/horses/H08_StormGallop_Ortho",
+            showcaseUrl: "textures/horses/H08_StormRun_Showcase",
+            orthoUrl: "textures/horses/H08_StormRun_Ortho",
             runningStyle: "BATTLER"
         },
         {
             id: "H09",
             horseNo: 9,
             nameZh: "惊雷破空",
-            nameEn: "Thunder Strike",
+            nameEn: "Thunder Break",
             coatColor: "黑骝色白星章 (Dark Brown/Bay)",
             breed: "突击型大步幅赛马 (Long-stride Sprinter)",
             descriptionZh: "肩峰高耸，前胸胸肌双峰突出，出闸箱起步凶猛，直道冲刺如惊雷划空。",
-            showcaseUrl: "textures/horses/H09_ThunderStrike_Showcase",
-            orthoUrl: "textures/horses/H09_ThunderStrike_Ortho",
+            showcaseUrl: "textures/horses/H09_ThunderBreak_Showcase",
+            orthoUrl: "textures/horses/H09_ThunderBreak_Ortho",
             runningStyle: "CLOSER"
         },
         {
             id: "H10",
             horseNo: 10,
             nameZh: "烈阳战将",
-            nameEn: "Solar Warlord",
+            nameEn: "Sun Warrior",
             coatColor: "红枣骝色 (Blood Bay)",
             breed: "高压迫王者赛马 (Dominant Champion Blood)",
             descriptionZh: "骨架宏伟，颈部呈拱形雄驹弧线，臀部圆硕厚重，并驾齐驱时能施加极大竞争压迫感。",
-            showcaseUrl: "textures/horses/H10_SolarWarlord_Showcase",
-            orthoUrl: "textures/horses/H10_SolarWarlord_Ortho",
+            showcaseUrl: "textures/horses/H10_SunWarrior_Showcase",
+            orthoUrl: "textures/horses/H10_SunWarrior_Ortho",
             runningStyle: "FRONT_RUNNER"
         },
         {
             id: "H11",
             horseNo: 11,
             nameZh: "翡翠之梦",
-            nameEn: "Emerald Dream",
+            nameEn: "Jade Dream",
             coatColor: "沙金青骝 (Dun Roan)",
             breed: "柔韧持久型赛马 (Supple Stayer)",
             descriptionZh: "毛色奇特雅致，后躯飞节动作如钟摆般平稳丝滑，擅长在赛程后半段自外侧悄然逆转。",
-            showcaseUrl: "textures/horses/H11_EmeraldDream_Showcase",
-            orthoUrl: "textures/horses/H11_EmeraldDream_Ortho",
+            showcaseUrl: "textures/horses/H11_JadeDream_Showcase",
+            orthoUrl: "textures/horses/H11_JadeDream_Ortho",
             runningStyle: "CLOSER"
         },
         {
@@ -189,46 +189,142 @@ export class HorseAssetRegistry {
             showcaseUrl: "textures/horses/H12_AuroraStar_Showcase",
             orthoUrl: "textures/horses/H12_AuroraStar_Ortho",
             runningStyle: "STALKER"
+        },
+        {
+            id: "H13",
+            horseNo: 13,
+            nameZh: "天火之翼",
+            nameEn: "Sky Fire Wing",
+            coatColor: "琥珀栗毛 (Amber Chestnut)",
+            breed: "山地短途冲刺纯血 (Mountain Sprinter Thoroughbred)",
+            descriptionZh: "落基山脉边缘培育的顶级纯血，琥珀色栗毛在晴日下泛金光，晴朗硬质泥地上具备统治级冲刺极速。",
+            showcaseUrl: "textures/horses/H13_SkyFire_Showcase",
+            orthoUrl: "textures/horses/H13_SkyFire_Ortho",
+            runningStyle: "FRONT_RUNNER"
+        },
+        {
+            id: "H14",
+            horseNo: 14,
+            nameZh: "荒原霸主",
+            nameEn: "Plains Overlord",
+            coatColor: "野生栗毛 (Wild Chestnut)",
+            breed: "旷野耐力野血马 (Plains Endurance Wildblood)",
+            descriptionZh: "纯正旷野野马血统，栗毛粗粝带晒痕，心肺容量惊人，末程400米拉锯战胜率第一。",
+            showcaseUrl: "textures/horses/H14_PlainsOverlord_Showcase",
+            orthoUrl: "textures/horses/H14_PlainsOverlord_Ortho",
+            runningStyle: "BATTLER"
+        },
+        {
+            id: "H15",
+            horseNo: 15,
+            nameZh: "白银之光",
+            nameEn: "Silver Beam",
+            coatColor: "铂银亮毛 (Platinum Silver)",
+            breed: "贵族中距追袭纯血 (Aristocratic Middle-Distance Stalker)",
+            descriptionZh: "银白色鬃毛飞扬，擅长中后段借风滑行，最后弯道切内线突围能力拔群。",
+            showcaseUrl: "textures/horses/H15_SilverBeam_Showcase",
+            orthoUrl: "textures/horses/H15_SilverBeam_Ortho",
+            runningStyle: "STALKER"
+        },
+        {
+            id: "H16",
+            horseNo: 16,
+            nameZh: "黑曜风暴",
+            nameEn: "Obsidian Storm",
+            coatColor: "炭黑灰毛 (Charcoal Black)",
+            breed: "重型湿地泥地马 (Heavy Mud-Grinder)",
+            descriptionZh: "肌肉密度极高，炭黑被毛如黑曜石，强劲的后肢蹬踏力使其在烂泥湿地赛道如履平地。",
+            showcaseUrl: "textures/horses/H16_ObsidianStorm_Showcase",
+            orthoUrl: "textures/horses/H16_ObsidianStorm_Ortho",
+            runningStyle: "BATTLER"
+        },
+        {
+            id: "H17",
+            horseNo: 17,
+            nameZh: "月影独行",
+            nameEn: "Moon Walker",
+            coatColor: "石板青灰毛 (Slate Grey)",
+            breed: "沉稳缠斗型赛马 (Composed Battler)",
+            descriptionZh: "性格沉稳冷静，多马并驾齐驱时心率毫不紊乱，擅长狭窄空隙钻击。",
+            showcaseUrl: "textures/horses/H17_MoonWalker_Showcase",
+            orthoUrl: "textures/horses/H17_MoonWalker_Ortho",
+            runningStyle: "BATTLER"
+        },
+        {
+            id: "H18",
+            horseNo: 18,
+            nameZh: "狂怒号角",
+            nameEn: "Raging Horn",
+            coatColor: "古铜暗骝 (Bronze Dark Bay)",
+            breed: "大步幅领放赛马 (Long-Stride Front-Runner)",
+            descriptionZh: "步幅宽大凶悍，古铜色暗骝毛在阳光下泛金属光泽，一旦起跑占据领放领地便极难被反超。",
+            showcaseUrl: "textures/horses/H18_RagingHorn_Showcase",
+            orthoUrl: "textures/horses/H18_RagingHorn_Ortho",
+            runningStyle: "FRONT_RUNNER"
+        },
+        {
+            id: "H19",
+            horseNo: 19,
+            nameZh: "金羽神鹰",
+            nameEn: "Golden Eagle",
+            coatColor: "鎏金黄栗 (Gilded Chestnut)",
+            breed: "全能冠军后上马 (All-Round Champion Closer)",
+            descriptionZh: "黄金血统纯血名宿，鎏金栗毛配金色飞鬃，在各类赛道均能保持稳定胜率。",
+            showcaseUrl: "textures/horses/H19_GoldenEagle_Showcase",
+            orthoUrl: "textures/horses/H19_GoldenEagle_Ortho",
+            runningStyle: "CLOSER"
+        },
+        {
+            id: "H20",
+            horseNo: 20,
+            nameZh: "深渊魅影",
+            nameEn: "Abyssal Phantom",
+            coatColor: "靛蓝玄黑 (Indigo Black)",
+            breed: "绝杀型冷门黑马 (Last-Gasp Dark Horse)",
+            descriptionZh: "低调内敛但杀伤力巨大，靛蓝玄黑被毛在暗处近乎隐形，常在落后两马位的死局中上演绝杀。",
+            showcaseUrl: "textures/horses/H20_AbyssalPhantom_Showcase",
+            orthoUrl: "textures/horses/H20_AbyssalPhantom_Ortho",
+            runningStyle: "STALKER"
         }
     ];
 
-    /** 小马驹 4 阶段成长标准定义 */
+    /** 小马驹 4 阶段成长标准定义（严格对照设计图约0-1岁、1-2岁、3-5岁、5岁以上） */
     public static readonly FOAL_STAGES: FoalStageInfo[] = [
         {
             stage: FoalGrowthStage.Foal,
             nameZh: "幼驹期",
             nameEn: "Foal",
-            ageDesc: "0~6 个月",
+            ageDesc: "约 0~1 岁",
             anatomicalTrait: "腿长占成年85%，头大身短，腹部圆鼓，绒毛丰厚蓬松，骨骺未闭合，线条圆润可爱。",
-            showcaseUrl: "textures/foals/F01_Stage1_Foal_Showcase",
-            orthoUrl: "textures/foals/F01_Stage1_Foal_Ortho"
+            showcaseUrl: "textures/foals/F01_WildBreeze_Stage1_Foal",
+            orthoUrl: "textures/foals/F01_WildBreeze_Stage1_Foal"
         },
         {
             stage: FoalGrowthStage.Yearling,
             nameZh: "青年期",
             nameEn: "Yearling",
-            ageDesc: "1~2 岁",
+            ageDesc: "约 1~2 岁",
             anatomicalTrait: "尴尬发育期（Awkward Stage）。臀高比肩鬐高 2~5cm，骨架纵向拉伸，褪去胎毛换出光泽短毛，步态轻快富有弹跳力。",
-            showcaseUrl: "textures/foals/F01_Stage2_Yearling_Showcase",
-            orthoUrl: "textures/foals/F01_Stage2_Yearling_Ortho"
+            showcaseUrl: "textures/foals/F01_WildBreeze_Stage2_Yearling",
+            orthoUrl: "textures/foals/F01_WildBreeze_Stage2_Yearling"
         },
         {
             stage: FoalGrowthStage.Adult,
             nameZh: "成年期",
             nameEn: "Adult",
-            ageDesc: "3~4 岁",
+            ageDesc: "约 3~5 岁",
             anatomicalTrait: "成熟黄金比例。肩鬐与臀部齐平（标准正方形身材），胸廓宽深，骨骼完全闭合，胸肌臀肌分块饱满，进入最佳配种与体态期。",
-            showcaseUrl: "textures/foals/F01_Stage3_Adult_Showcase",
-            orthoUrl: "textures/foals/F01_Stage3_Adult_Ortho"
+            showcaseUrl: "textures/foals/F01_WildBreeze_Stage3_Adult",
+            orthoUrl: "textures/foals/F01_WildBreeze_Stage3_Adult"
         },
         {
             stage: FoalGrowthStage.RacingPro,
-            nameZh: "职业赛马期",
-            nameEn: "Racing Pro",
-            ageDesc: "4 岁以上竞技巅峰",
+            nameZh: "职业赛马",
+            nameEn: "Racehorse",
+            ageDesc: "约 5 岁以上",
             anatomicalTrait: "体脂低于8%，肌肉紧绷拉丝，皮下腹壁静脉隐现。佩戴专业竞技超轻马鞍、号码布与护腿绑带，具备强烈竞技压迫感。",
-            showcaseUrl: "textures/foals/F01_Stage4_Pro_Showcase",
-            orthoUrl: "textures/foals/F01_Stage4_Pro_Ortho"
+            showcaseUrl: "textures/foals/F01_WildBreeze_Stage4_Pro",
+            orthoUrl: "textures/foals/F01_WildBreeze_Stage4_Pro"
         }
     ];
 
@@ -297,5 +393,15 @@ export class HorseAssetRegistry {
     public static getHorseByName(nameZh?: string): HorseProfile | null {
         if (!nameZh) return null;
         return this.HORSES.find(h => h.nameZh === nameZh || nameZh.includes(h.nameZh)) || null;
+    }
+
+    /** 解析服务端下发的成长阶段字符串为枚举 (FOAL, JUVENILE, MATURE, PRO_RACER) */
+    public static parseGrowthStage(stageStr?: string): FoalGrowthStage {
+        if (!stageStr) return FoalGrowthStage.Adult;
+        const s = stageStr.toUpperCase();
+        if (s.includes("FOAL") || s.includes("幼")) return FoalGrowthStage.Foal;
+        if (s.includes("JUVENILE") || s.includes("YEARLING") || s.includes("青")) return FoalGrowthStage.Yearling;
+        if (s.includes("PRO") || s.includes("RACE") || s.includes("职")) return FoalGrowthStage.RacingPro;
+        return FoalGrowthStage.Adult;
     }
 }

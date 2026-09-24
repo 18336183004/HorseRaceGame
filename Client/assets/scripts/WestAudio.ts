@@ -10,6 +10,8 @@
  * 4. 完整的音量控制、静音记忆与切页防爆音/防串音机制。
  */
 import { WestPerformance } from "./WestPerformance";
+import { I18n } from "./I18n";
+import { WestHaptics } from "./WestHaptics";
 
 /** 玩法模式与音频分路 */
 export type AudioPlayMode = "WIN" | "QUINELLA" | "COMMON";
@@ -72,6 +74,8 @@ export class WestAudio {
     // 赛马疾驰循环
     private static gallopTimer: ReturnType<typeof setInterval> | null = null;
     private static isGalloping = false;
+    private static gallopIntervalMs = 210;
+    private static currentGallopMode: AudioPlayMode = "COMMON";
 
     /** 初始化或恢复 Web Audio 上下文与总线拓扑 */
     private static getContext(): AudioContext | null {
@@ -967,6 +971,7 @@ export class WestAudio {
 
     /** 筹码选择碰撞清脆金属响 (Chip Clink) */
     public static playChipClink(mode: AudioPlayMode = "COMMON"): void {
+        WestHaptics.betClick();
         if (!this.soundEnabled) return;
         const ctx = this.getContext();
         const targetGain = this.getTargetGain(mode, true);
@@ -1068,6 +1073,7 @@ export class WestAudio {
 
     /** 发令枪/终点绝杀枪响 (Gunshot Crack) */
     public static playGunshot(mode: AudioPlayMode = "COMMON"): void {
+        WestHaptics.starterGun();
         if (!this.soundEnabled) return;
         const ctx = this.getContext();
         const targetGain = this.getTargetGain(mode, false);
@@ -1124,11 +1130,27 @@ export class WestAudio {
         }
     }
 
+    /** 动态设置马蹄疾驰步频倍率 (0.6 ~ 1.6)，冲刺 (Rush) 与终点决战时动态加速 */
+    public static setGallopCadence(multiplier: number = 1.0): void {
+        const targetInterval = Math.max(120, Math.min(260, Math.round(210 / Math.max(0.5, multiplier))));
+        if (Math.abs(this.gallopIntervalMs - targetInterval) < 10) return;
+        this.gallopIntervalMs = targetInterval;
+        if (this.isGalloping && this.gallopTimer !== null) {
+            clearInterval(this.gallopTimer);
+            this.gallopTimer = null;
+            this.startGallopLoopInternal(this.currentGallopMode);
+        }
+    }
+
     /** 开启马蹄奔驰循环 (Gallop Loop) - 含随机环境马匹呼吸/打鼻息氛围声 */
     public static startGallopLoop(mode: AudioPlayMode = "COMMON"): void {
         if (!this.soundEnabled || this.isGalloping) return;
         this.isGalloping = true;
+        this.currentGallopMode = mode;
+        this.startGallopLoopInternal(mode);
+    }
 
+    private static startGallopLoopInternal(mode: AudioPlayMode = "COMMON"): void {
         let step = 0;
         let lastSnortStep = 0;
         this.gallopTimer = setInterval(() => {
@@ -1139,12 +1161,13 @@ export class WestAudio {
 
             try {
                 const now = ctx.currentTime;
-                // 真实四拍马蹄节拍，微弱随机化节律模拟多匹马蹄交错
-                const jitter = (Math.random() - 0.5) * 0.012;
-                const delays = [0, 0.055 + jitter];
+                // 冲刺状态下步频加快，声压与共振适度加强
+                const isFast = this.gallopIntervalMs < 170;
+                const jitter = (Math.random() - 0.5) * 0.010;
+                const delays = [0, 0.050 + jitter];
                 const freqs = step % 2 === 0
-                    ? [300 + Math.random() * 30, 220 + Math.random() * 20]
-                    : [260 + Math.random() * 25, 190 + Math.random() * 15];
+                    ? [320 + Math.random() * 30, 230 + Math.random() * 20]
+                    : [270 + Math.random() * 25, 200 + Math.random() * 15];
 
                 for (let i = 0; i < 2; i++) {
                     const t = now + delays[i];
@@ -1152,13 +1175,12 @@ export class WestAudio {
                     const gain = ctx.createGain();
 
                     osc.type = "triangle";
-                    osc.frequency.setValueAtTime(freqs[i], t);
-                    osc.frequency.exponentialRampToValueAtTime(75, t + 0.04);
+                    osc.frequency.setValueAtTime(isFast ? freqs[i] * 1.12 : freqs[i], t);
+                    osc.frequency.exponentialRampToValueAtTime(75, t + (isFast ? 0.035 : 0.04));
 
-                    // 随着奔跑进行，马蹄声压微弱波动，模拟赛场多马踏步不齐
-                    const vol = 0.12 + Math.random() * 0.05;
+                    const vol = (isFast ? 0.16 : 0.12) + Math.random() * 0.05;
                     gain.gain.setValueAtTime(vol, t);
-                    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.045);
+                    gain.gain.exponentialRampToValueAtTime(0.001, t + (isFast ? 0.038 : 0.045));
 
                     osc.connect(gain);
                     gain.connect(targetGain);
@@ -1178,11 +1200,12 @@ export class WestAudio {
             } catch {
                 // ignore
             }
-        }, 210); // 约 280 步/分疾驰频率
+        }, this.gallopIntervalMs);
     }
 
     public static stopGallopLoop(): void {
         this.isGalloping = false;
+        this.gallopIntervalMs = 210;
         if (this.gallopTimer !== null) {
             clearInterval(this.gallopTimer);
             this.gallopTimer = null;
@@ -1844,8 +1867,44 @@ export class WestAudio {
         }
         this.lastCowboyVoiceTime = nowMs;
 
-        // 根据情境挑选经典地道西部牛仔口音台词
-        const phraseMap: Record<string, string[]> = {
+        // 中文原声解说词库 (激情、地道、高动态赛马实况)
+        const phraseMapZh: Record<string, string[]> = {
+            start: [
+                "闸门开启，群马疾驰出闸！",
+                "发令枪响，全速向前奔袭！",
+                "起跑漂亮，策马扬鞭！",
+            ],
+            overtake: [
+                "外道发力，漂亮的大步超越！",
+                "风驰电掣，瞬间撕破包围圈！",
+                "弯道切入，迅猛反超！",
+            ],
+            duel: [
+                "并驾齐驱！最后直道寸步不让！",
+                "两马缠斗，生死只在毫厘之间！",
+                "杀入最后冲刺，拼尽全力一搏！",
+            ],
+            win: [
+                "冲过终点！拔得头筹，勇夺冠军！",
+                "拉断彩带，王者加冕，绝杀夺冠！",
+                "全场沸腾！这匹赛马创造了奇迹！",
+            ],
+            lose: [
+                "遗憾惜败，整顿马鞍下一场再战！",
+                "虽败犹荣，下轮定能卷土重来！",
+            ],
+            spurs: [
+                "加速！全速向前狂奔！",
+                "加鞭冲刺，如烈风呼啸！",
+            ],
+            bet: [
+                "筹码已就位，祝您旗开得胜！",
+                "慧眼识千里马，下注成功！",
+            ],
+        };
+
+        // 经典美式西部牛仔原声台词库
+        const phraseMapEn: Record<string, string[]> = {
             start: [
                 "Yee-haw! Giddy up, boys!",
                 "Fire in the hole! Let 'em ride!",
@@ -1879,6 +1938,8 @@ export class WestAudio {
             ],
         };
 
+        const isZh = I18n.getLocale() === "zh-CN";
+        const phraseMap = isZh ? phraseMapZh : phraseMapEn;
         const phrases = phraseMap[cue] || phraseMap.start;
         const phrase = phrases[Math.floor(Math.random() * phrases.length)];
 
@@ -1915,10 +1976,16 @@ export class WestAudio {
                 }
 
                 const utterance = new SpeechSynthesisUtterance(phrase);
-                utterance.lang = "en-US";
-                // 粗犷西部牛仔拉长音调与快节奏特色
-                utterance.pitch = 0.82;
-                utterance.rate = 1.14;
+                if (isZh) {
+                    utterance.lang = "zh-CN";
+                    utterance.pitch = 0.96;
+                    utterance.rate = 1.16;
+                } else {
+                    utterance.lang = "en-US";
+                    // 粗犷西部牛仔拉长音调与快节奏特色
+                    utterance.pitch = 0.82;
+                    utterance.rate = 1.14;
+                }
                 utterance.volume = Math.max(0.1, Math.min(1.0, this.sfxVolume * 0.95));
 
                 const cleanupSpeech = () => {
@@ -1951,22 +2018,37 @@ export class WestAudio {
                     cleanupSpeech();
                 }, 4000);
 
-                // 优先寻找美式英语原生男声
+                // 优先检索匹配目标语言的原生男声或高动态解说音色
                 const voices = window.speechSynthesis.getVoices();
                 if (voices && voices.length > 0) {
-                    const usMale = voices.find(
-                        (v) =>
-                            v.lang.toLowerCase().includes("en") &&
-                            (v.name.toLowerCase().includes("male") ||
-                                v.name.toLowerCase().includes("david") ||
-                                v.name.toLowerCase().includes("george") ||
-                                v.name.toLowerCase().includes("natural")),
-                    );
-                    const usAny = voices.find((v) => v.lang.toLowerCase().includes("en-us"));
-                    if (usMale) {
-                        utterance.voice = usMale;
-                    } else if (usAny) {
-                        utterance.voice = usAny;
+                    if (isZh) {
+                        const zhVoice = voices.find(
+                            (v) =>
+                                (v.lang.toLowerCase().includes("zh") || v.lang.toLowerCase().includes("cmn")) &&
+                                (v.name.toLowerCase().includes("huihui") ||
+                                    v.name.toLowerCase().includes("yunxi") ||
+                                    v.name.toLowerCase().includes("xiaoxiao") ||
+                                    v.name.toLowerCase().includes("male") ||
+                                    v.name.toLowerCase().includes("natural")),
+                        ) || voices.find((v) => v.lang.toLowerCase().includes("zh") || v.lang.toLowerCase().includes("cmn"));
+                        if (zhVoice) {
+                            utterance.voice = zhVoice;
+                        }
+                    } else {
+                        const usMale = voices.find(
+                            (v) =>
+                                v.lang.toLowerCase().includes("en") &&
+                                (v.name.toLowerCase().includes("male") ||
+                                    v.name.toLowerCase().includes("david") ||
+                                    v.name.toLowerCase().includes("george") ||
+                                    v.name.toLowerCase().includes("natural")),
+                        );
+                        const usAny = voices.find((v) => v.lang.toLowerCase().includes("en-us"));
+                        if (usMale) {
+                            utterance.voice = usMale;
+                        } else if (usAny) {
+                            utterance.voice = usAny;
+                        }
                     }
                 }
 

@@ -112,6 +112,12 @@ public sealed class BettingService(IGameDbContext db, RaceRuleConfigService rule
             throw new BusinessRuleException("BET_AMOUNT_BELOW_MINIMUM", $"投注金额不能低于最小投注额 {rules.MinimumBetAmount}");
         }
 
+        // 上限校验：防止单笔超大额注单破坏奖池稀释公平性。
+        if (rules.MaximumBetAmount > 0 && request.Amount > rules.MaximumBetAmount)
+        {
+            throw new BusinessRuleException("BET_AMOUNT_ABOVE_MAXIMUM", $"单笔投注金额不能超过 {rules.MaximumBetAmount}");
+        }
+
         var wallet = await WalletConcurrency.LockAsync(db, playerId, cancellationToken)
             ?? throw new BusinessRuleException("WALLET_NOT_FOUND", "玩家钱包不存在");
 
@@ -680,6 +686,10 @@ public sealed class BettingService(IGameDbContext db, RaceRuleConfigService rule
 
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken);
 
+        // 1. 串行化悲观锁定玩家钱包，杜绝并发双击/多重请求导致重复扣款
+        var wallet = await WalletConcurrency.LockAsync(db, playerId, cancellationToken)
+            ?? throw new BusinessRuleException("WALLET_NOT_FOUND", "钱包不存在");
+
         var existingOrder = await db.BetOrders.FirstOrDefaultAsync(
             x => x.OrderNo == request.OrderNo,
             cancellationToken)
@@ -692,8 +702,7 @@ public sealed class BettingService(IGameDbContext db, RaceRuleConfigService rule
 
         if (existingOrder.IsDoubleDown)
         {
-            var currentWallet = await db.Wallets.AsNoTracking().FirstOrDefaultAsync(x => x.PlayerId == playerId, cancellationToken);
-            return new DoubleDownResponse(existingOrder.OrderNo, existingOrder.DoubleDownAmount, existingOrder.BetAmount + existingOrder.DoubleDownAmount, currentWallet?.Balance ?? 0m);
+            return new DoubleDownResponse(existingOrder.OrderNo, existingOrder.DoubleDownAmount, existingOrder.BetAmount + existingOrder.DoubleDownAmount, wallet.Balance);
         }
 
         if (!string.Equals(existingOrder.PlayType, "WIN", StringComparison.OrdinalIgnoreCase))
@@ -701,16 +710,10 @@ public sealed class BettingService(IGameDbContext db, RaceRuleConfigService rule
             throw new BusinessRuleException("PLAY_TYPE_NOT_SUPPORTED", "冲刺加倍追投仅限单马独赢 (WIN) 注单开放");
         }
 
-        var round = await db.RaceRounds.FirstOrDefaultAsync(x => x.Id == existingOrder.RoundId, cancellationToken)
+        var round = await db.RaceRounds
+            .Include(x => x.Horses)
+            .FirstOrDefaultAsync(x => x.Id == existingOrder.RoundId, cancellationToken)
             ?? throw new BusinessRuleException("ROUND_NOT_FOUND", "赛事轮次不存在");
-
-        var targetHorse = await db.RaceHorses.FirstOrDefaultAsync(
-            x => x.RoundId == existingOrder.RoundId && x.HorseNo == existingOrder.HorseNo,
-            cancellationToken);
-        if (targetHorse?.FinalRank is > 3)
-        {
-            throw new BusinessRuleException("HORSE_NOT_IN_TOP3", "仅限对处于前 3 名领先梯队的赛马发起冲刺加倍");
-        }
 
         if (round.State != RaceState.Racing || round.RaceStartAt == null)
         {
@@ -727,10 +730,26 @@ public sealed class BettingService(IGameDbContext db, RaceRuleConfigService rule
             throw new BusinessRuleException("INPLAY_WINDOW_CLOSED", $"冲刺加倍追投窗口仅在开赛第 {windowStart}~{windowEnd} 秒开放");
         }
 
-        var doubleAmount = existingOrder.BetAmount;
-        var wallet = await WalletConcurrency.LockAsync(db, playerId, cancellationToken)
-            ?? throw new BusinessRuleException("WALLET_NOT_FOUND", "钱包不存在");
+        // 2. 依据走地实时动力学轨迹计算此时处于前 3 名领先梯队的赛马，严格防范直接读取 FinalRank 导致的赛果泄漏
+        var midRaceTop3 = round.Horses
+            .Select(h =>
+            {
+                var fTime = (double)(h.FinishTime ?? 25m);
+                var archetype = (int)Math.Abs((round.Id + h.HorseNo * 7 + 3) % 4);
+                var progress = CalculateDynamicProgress(elapsed, fTime, archetype);
+                return (h.HorseNo, progress);
+            })
+            .OrderByDescending(x => x.progress)
+            .Take(3)
+            .Select(x => x.HorseNo)
+            .ToHashSet();
 
+        if (!midRaceTop3.Contains(existingOrder.HorseNo))
+        {
+            throw new BusinessRuleException("HORSE_NOT_IN_TOP3", "仅限对处于前 3 名领先梯队的赛马发起冲刺加倍");
+        }
+
+        var doubleAmount = existingOrder.BetAmount;
         if (wallet.Balance < doubleAmount)
         {
             throw new BusinessRuleException("INSUFFICIENT_FUNDS", "钱包余额不足以冲刺加倍");
@@ -808,5 +827,30 @@ public sealed class BettingService(IGameDbContext db, RaceRuleConfigService rule
             order.SecondHorseNo,
             order.Combination,
             order.ThirdHorseNo);
+    }
+
+    /// <summary>
+    /// 计算走地非线性动力学进度，与客户端赛跑表现 100% 对齐。
+    /// </summary>
+    private static double CalculateDynamicProgress(double elapsedSeconds, double finishTime, int archetype)
+    {
+        if (elapsedSeconds <= 0) return 0;
+        if (elapsedSeconds >= finishTime) return 1.0;
+
+        var u = Math.Clamp(elapsedSeconds / finishTime, 0.0, 1.0);
+        var baseEased = u * u * (3 - 2 * u);
+        var windowFactor = Math.Sin(Math.PI * u);
+
+        var styleCurve = archetype switch
+        {
+            0 => Math.Sin(Math.PI * u) * (1 - u),
+            1 => Math.Sin(Math.PI * 2 * u) * 0.5 + Math.Sin(Math.PI * u) * 0.2,
+            2 => -Math.Sin(Math.PI * u) * (1 - u) * 0.75 + Math.Sin(Math.PI * u) * Math.Pow(u, 1.4) * 1.5,
+            _ => Math.Sin(Math.PI * 3 * u) * 0.4 + Math.Sin(Math.PI * u) * 0.3
+        };
+
+        const double amplitude = 0.068;
+        var delta = amplitude * windowFactor * styleCurve;
+        return Math.Clamp(baseEased + delta, 0.0, 1.0);
     }
 }

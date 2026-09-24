@@ -16,6 +16,9 @@ public class RaceRuleConfig
 
     public decimal MinBetAmount { get; set; } = 2m;
 
+    /// <summary>单笔下注最高金额，0 表示不限（不推荐）。</summary>
+    public decimal MaxBetAmount { get; set; } = 10000m;
+
     public decimal InitialWalletBalance { get; set; } = 1000m;
 
     public int ReliefWaitSeconds { get; set; } = 7200;

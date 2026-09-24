@@ -8,13 +8,8 @@
 
 ## 手动初始化顺序
 
-1. `Database/DeployInit/001_initial.sql`
-2. `Database/DeployInit/002_upgrade_existing_schema.sql`
-3. `Database/DeployInit/003_seed_default_race_rules.sql`
-4. `Database/DeployInit/004_add_game_domain_logs.sql`
-5. `Database/DeployInit/005_add_active_round_partial_index.sql`
-6. `Database/DeployInit/006_v2_hardening.sql`
-7. `Database/DeployInit/007_expand_daily_tasks.sql`
+1. `Database/DeployInit/001_schema.sql` (全量 74 表结构定义、外键约束与全量复合业务索引)
+2. `Database/DeployInit/002_seed_data.sql` (全量规则配置、字典主数据、20 匹赛马、40 只小马驹与开发测试种子数据)
 
 ## EF Core 规则
 

@@ -73,6 +73,11 @@ public sealed class RaceWorker(
                     logger.LogWarning("RaceWorker 暂停推进：PostgreSQL 数据库/目录不可用（SQLSTATE 3D000）。请确认当前配置的数据库已创建，并已按 001 -> 002 -> 003 执行 SQL。错误：{Message}", ex.Message);
                     await Task.Delay(TimeSpan.FromSeconds(5), ct);
                 }
+                else if (IsRedisConnectionError(ex))
+                {
+                    logger.LogWarning("RaceWorker 暂无法连接到 Redis 服务，轮次状态机暂停推进（等待 3 秒后重试）...");
+                    await Task.Delay(TimeSpan.FromSeconds(3), ct);
+                }
                 else
                 {
                     logger.LogError(ex, "RaceWorker推进轮次失败");
@@ -97,6 +102,18 @@ public sealed class RaceWorker(
         for (Exception? current = ex; current is not null; current = current.InnerException)
         {
             if (current.Message.Contains("3D000", StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+        return false;
+    }
+
+    private static bool IsRedisConnectionError(Exception ex)
+    {
+        for (Exception? current = ex; current is not null; current = current.InnerException)
+        {
+            if (current is StackExchange.Redis.RedisConnectionException or StackExchange.Redis.RedisTimeoutException)
+                return true;
+            if (current.Message.Contains("It was not possible to connect to the redis server", StringComparison.OrdinalIgnoreCase))
                 return true;
         }
         return false;

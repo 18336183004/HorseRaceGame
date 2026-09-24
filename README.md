@@ -104,11 +104,11 @@ HorseRaceGame.git/
 
 1. 确保本地 PostgreSQL（端口 `5432`）与 Redis（端口 `6379`）正常运行；
 2. 在 PostgreSQL 中创建名为 `racegame` 的数据库（或按需指定库名）；
-3. 可直接执行汇总初始化脚本（推荐）：
+3. 执行合并精简后的标准化部署脚本：
    ```bash
-   psql -U postgres -d racegame -f Database/DeployInit/all_in_one_init.sql
+   psql -U postgres -d racegame -f Database/DeployInit/001_schema.sql
+   psql -U postgres -d racegame -f Database/DeployInit/002_seed_data.sql
    ```
-   或依次执行增量迁移脚本 `001_initial.sql` ~ `009_arcade_quinella_mode.sql`。
 
 > [!TIP]
 > 默认管理后台账号：`admin`，默认密码：`Admin@123456`。

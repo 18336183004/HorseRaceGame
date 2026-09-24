@@ -15,8 +15,8 @@ public sealed class RaceEventPublisher(
 {
     public async Task PublishAsync(long roundId, string eventName, object payload, CancellationToken cancellationToken = default)
     {
-        // 1. 本机在线长连接广播：新轮次产生、提前开赛或全服停服维护时广播给全服在线玩家；轮内事件推送给当前轮次分组。
-        var isGlobalBroadcast = eventName == "RaceBettingStarted" || eventName == "SystemMaintenanceKick" || eventName == "RaceBettingFastForward" || roundId == 0L;
+        // 1. 本机在线长连接广播：新轮次产生、提前开赛、全服大奖掉落或全服停服维护时广播给全服在线玩家；轮内事件推送给当前轮次分组。
+        var isGlobalBroadcast = eventName == "RaceBettingStarted" || eventName == "SystemMaintenanceKick" || eventName == "RaceBettingFastForward" || eventName == "MegaJackpotDropped" || roundId == 0L;
         var clients = isGlobalBroadcast ? hub.Clients.All : hub.Clients.Group(RaceHub.GroupName(roundId));
         await clients.SendAsync(eventName, payload, cancellationToken);
 

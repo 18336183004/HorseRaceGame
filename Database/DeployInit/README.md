@@ -1,25 +1,64 @@
-# Database DeployInit (部署初始化快照)
+# Database DeployInit (数据库部署初始化)
 
-本目录为 Docker / 部署初始化（`deploy/docker-compose.yml` 挂载目录）所使用的 SQL 初始化快照。
+本目录为 Docker 容器化启动（`deploy/docker-compose.yml` 中挂载至 `/docker-entrypoint-initdb.d:ro`）及数据库全新部署的**唯一定义源**。
 
-- **当前状态**：包含 001~016 完整 SQL 初始化与升级脚本。
-  - `001_initial.sql`：基础核心表架构（玩家、钱包、轮次、赛马、管理员等）。
-  - `002_upgrade_existing_schema.sql`：增量兼容补列、商城、装扮、任务领奖与审计日志表。
-  - `003_seed_default_race_rules.sql`：丰富种子数据（12匹赛马、5位骑手、11件装扮、8类道具、14款商品、9项任务、5篇公告、8场历史赛果与账单流水）。
-  - `004_add_game_domain_logs.sql`：分域日志表（比赛、马匹、角色日志）。
-  - `005_add_active_round_partial_index.sql`：单活动轮次部分唯一索引硬性防并发。
-  - `006_v2_hardening.sql`：V2.0 幂等指纹 `request_hash` 与历史默认凭据注销。
-  - `007_expand_daily_tasks.sql`：完整 9 项每日任务对齐（场次 3/10/20、胜场 1/3/5、负场 1/3/5）。
-  - `008_v2_1_features.sql`：V2.1 社交邀请裂变返佣、成就勋章系统与赛场天气偏好。
-  - `009_arcade_quinella_mode.sql`：经典街机连赢（Quinella 15组矩阵组合）玩法支持（`bet_orders` 扩展 `play_type`/`second_horse_no`/`combination`，`race_rounds` 扩展 `second_horse_no`/`quinella_odds_snapshot_json` 及复合索引）。
-  - `010_remove_selection_conflict.sql`：规则决策放开选马限制（将 `race_bet_selections` 唯一约束由 `(player_id, round_id)` 升级为 `(player_id, round_id, horse_no)`，允许多马投注与跨玩法同投）。
-  - `011_p0_business_and_referral_enhancements.sql`：命中连胜 (Hit Streak) 与盈利胜局 (Net Profit Win) 细分、下级负盈利返佣 (0.2% + 规费比例) 与未结佣金提炼支持。
-  - `012_pari_mutuel_maintenance_and_fairness.sql`：浮动彩池 (Pari-Mutuel) 稀释因子、停服维护时间窗口、退款关联流水与千分之10~百分之2规费阶梯。
-  - `013_gameplay_expansion_and_parameters.sql`：模式一专属马房与出赛分红、全服超级大奖池、局内冲刺加倍、Photo Finish绝杀与动态台本解说。
-  - `014_wallet_frozen_balance.sql`：钱包冻结资金 `frozen_balance` 字段支撑拍卖竞价原子锁资。
-  - `015_ranch_mode_core_schema.sql`：模式三西部纯血马房养成（五维与潜能、装备槽、投喂/训练/考核/巡回赛/繁育/拍卖/契约表与装备种子数据）。
-  - `016_dynamic_race_and_horse_configs.sql`：动态赛事与马匹配置扩展（赛场环境、解说/荐马模板、马房幼驹/饲料/训练/护理目录），并为 `race_rule_configs` 增加动态赔率、Photo Finish 概率、场次马数、评分权重、资格赛门槛、系统回收等 14 个配置列。
-- **一键合并脚本**：
-  - `all_in_one_init.sql`：已将 001~016 全部脚本顺序合并为统一的幂等单文件，支持客户端/工具（Navicat、DBeaver、pgAdmin 或 psql）一键导入，已在 PostgreSQL 实机通过全量与重复执行测试验证。
-- **架构事实源（Source of Truth）**：作为数据库初始化的唯一定义源，单步按 001~016 顺序执行，或直接一键执行 `all_in_one_init.sql`。
-- **生产发布说明**：后续切到正式生产环境前，可按需生成剔除测试玩家和固定管理员凭据的独立发布镜像。
+已完成全量结构与种子的深度整合与合并，由原先 18 个零散补丁文件精简合并为 **2 个高度内聚的标准 SQL 文件**：
+
+---
+
+## 目录文件架构
+
+```
+Database/DeployInit/
+├── 001_schema.sql             # 全量 74 张数据库表结构定义、主外键引用、枚举约束与全量复合业务索引
+├── 002_seed_data.sql          # 全量系统基础配置、字典目录、20 匹顶级赛事马、40 匹西部纯血小马驹与测试初始化数据
+├── 003_add_max_bet_amount.sql # 增量安全补丁：race_rule_configs 新增 max_bet_amount 约束与字段
+└── README.md                  # 说明文档
+```
+
+---
+
+## 文件内容详述
+
+### 1. `001_schema.sql` (数据库全量 DDL 结构)
+- 包含系统全部 **74 张业务数据表**（涵盖玩家认证、钱包资产、管理员权限、赛事轮次、选马下注、商城订单、任务成就、奖池、社交推荐、赛前解说/环境预设、纯血马房养成、繁育拍卖与后台任务作业等）。
+- 所有历史版本（原 001~016）新增的列、检查约束、复合索引与外键引用均已**就地内联**，消除了历史迁移中反复 `ALTER TABLE` 带来的执行冗余与潜在死锁。
+- 完整包含 PostgreSQL 高性能局部索引、状态时间复合索引与幂等唯一约束。
+
+### 2. `002_seed_data.sql` (数据库全量 DML 初始数据)
+采用严格事务控制（`BEGIN ... COMMIT;`）并具备幂等导入特性（`ON CONFLICT DO NOTHING / UPDATE`），包含：
+1. **比赛规则配置**：标准规则与开发快速规则，并注入浮动彩池系数、Photo Finish、局内冲刺等运行参数。
+2. **赛场环境与解说模板**：6 大场地/天气环境偏好预设、7 套动态分段解说脚本与 4 类专家荐马模板。
+3. **牧场养成基础字典**：4 档纯血幼驹资质阶梯、4 种草料饲料、4 类体能专项训练、5 种理疗医护项目与 5 款真皮与合金装备。
+4. **二十匹顶级专业赛事马**（`horse_catalogs`）：完整包含 20 匹顶级赛马（赤焰流星、翠风、金色箭矢、紫电、极光之星等，包含头像与展示图资产路径、五维参数与胜率分布）。
+5. **骑手与商城主数据**：5 位专业骑师与驯马师、1~10 级成长梯度、8 类道具、11 款外观装扮与 14 款商城上架商品。
+6. **任务与成就定义**：9 项 PRD 每日任务体系（场次 3/10/20、胜场 1/3/5、负场 1/3/5）、10 项生涯/连胜/黑马成就与全服超级大奖池。
+7. **系统公告**：5 篇官方公告与活动说明。
+8. **初始化玩家与管理员**：
+   - 管理员账号（超级管理员角色及权限映射）。
+   - 开发测试账号（`testplayer01`）、9 名天梯榜单模拟玩家、初始钱包余额与资产。
+9. **四十只西部纯血牧场小马驹**（`ranch_horses`）：包含 WILD（10只）、PLAINS_TB（12只）、ROYAL（10只）、MYTHIC（8只）四大血统梯度的小马驹。
+10. **历史赛果与投注流水验证**：预置 8 轮已结算历史赛果及关联注单与钱包流水，并内置自动断言校验块（确保导入数据 100% 完整有效）。
+
+---
+
+## 部署执行方式
+
+### 方式一：Docker Compose 自动执行（推荐）
+在 `deploy/` 目录下执行启动命令，PostgreSQL 容器首次启动时会自动按文件名升序依次执行：
+```bash
+cd deploy
+docker compose up -d
+```
+
+### 方式二：命令行手动执行（psql）
+```bash
+# 1. 初始化表结构 (74 张表及全部索引)
+psql -U postgres -d racegame -f Database/DeployInit/001_schema.sql
+
+# 2. 导入全量基础配置与业务数据 (含 20 匹赛马与 40 只小马驹)
+psql -U postgres -d racegame -f Database/DeployInit/002_seed_data.sql
+
+# 3. 执行增量补丁（max_bet_amount 下注风控上限）
+psql -U postgres -d racegame -f Database/DeployInit/003_add_max_bet_amount.sql
+```

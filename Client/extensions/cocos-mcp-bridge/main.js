@@ -68,12 +68,31 @@ module.exports = {
                     return;
                 }
 
+                if (url.pathname === '/refresh-asset') {
+                    try {
+                        const target = url.searchParams.get('url') || 'db://assets/scripts/GameApp.ts';
+                        if (typeof Editor !== 'undefined' && Editor.Message) {
+                            await Editor.Message.request('asset-db', 'refresh-asset', target);
+                        }
+                        res.writeHead(200);
+                        res.end(JSON.stringify({ success: true, refreshed: target }));
+                    } catch (err) {
+                        res.writeHead(500);
+                        res.end(JSON.stringify({ success: false, error: err.message }));
+                    }
+                    return;
+                }
+
                 res.writeHead(404);
                 res.end(JSON.stringify({ error: 'Endpoint not found' }));
             });
 
             server.on('error', (err) => {
-                console.error('[Cocos-MCP-Bridge] 桥接端口错误:', err.message);
+                if (err.code === 'EADDRINUSE') {
+                    console.warn(`[Cocos-MCP-Bridge] 端口 ${BRIDGE_PORT} 已被占用，跳过桥接监听`);
+                } else {
+                    console.error('[Cocos-MCP-Bridge] 桥接端口错误:', err.message);
+                }
             });
 
             server.listen(BRIDGE_PORT, '127.0.0.1', () => {

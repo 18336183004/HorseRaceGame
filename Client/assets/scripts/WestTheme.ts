@@ -1997,3 +1997,42 @@ export class WestStyle {
         g.stroke();
     }
 }
+
+/**
+ * 黄金分割率与斐波那契排版律动系统 (Golden Ratio & Fibonacci Harmony Engine)
+ * 全面指导界面的尺寸配比、主次切分、留白呼吸感与字体级数。
+ */
+export class WestGolden {
+    /** 黄金比例常数 φ (Phi) */
+    public static readonly PHI = 1.6180339887;
+    /** 次主比 (Minor : Major = 1 : 1.618) */
+    public static readonly RATIO_MAJOR = 0.6180339887;
+    public static readonly RATIO_MINOR = 0.3819660113;
+
+    /** 斐波那契律动空间梯级 (像素) */
+    public static readonly SPACE_5 = 5;
+    public static readonly SPACE_8 = 8;
+    public static readonly SPACE_13 = 13;
+    public static readonly SPACE_21 = 21;
+    public static readonly SPACE_34 = 34;
+    public static readonly SPACE_55 = 55;
+    public static readonly SPACE_89 = 89;
+
+    /** 依据黄金分割比将总长度分为 [主区, 次区] */
+    public static split(totalLength: number): [number, number] {
+        const major = Math.round(totalLength * this.RATIO_MAJOR);
+        const minor = totalLength - major;
+        return [major, minor];
+    }
+
+    /** 依据高度计算黄金宽度 */
+    public static goldenWidth(height: number): number {
+        return Math.round(height * this.PHI);
+    }
+
+    /** 依据宽度计算黄金高度 */
+    public static goldenHeight(width: number): number {
+        return Math.round(width / this.PHI);
+    }
+}
+

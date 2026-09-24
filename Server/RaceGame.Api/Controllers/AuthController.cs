@@ -39,6 +39,12 @@ public sealed class AuthController(
             return BadRequest(new { code = 1, message = validationError });
         }
 
+        // 昵称长度校验：限制在 20 字符以内，防止超长字符串攻击存储层。
+        if (!string.IsNullOrWhiteSpace(request.Nickname) && request.Nickname.Trim().Length > 20)
+        {
+            return BadRequest(new { code = 1, message = "昵称不能超过 20 个字符" });
+        }
+
         var exists = await db.Players.AnyAsync(x => x.AccountNormalized == accountId.ToUpperInvariant(), cancellationToken);
         if (exists)
         {
@@ -54,7 +60,11 @@ public sealed class AuthController(
         {
             AccountId = accountId,
             AccountNormalized = accountId.ToUpperInvariant(),
-            Nickname = string.IsNullOrWhiteSpace(request.Nickname) ? accountId : request.Nickname.Trim(),
+            Nickname = string.IsNullOrWhiteSpace(request.Nickname)
+                ? accountId
+                : request.Nickname.Trim().Length <= 20
+                    ? request.Nickname.Trim()
+                    : throw new ArgumentException("昵称不能超过 20 个字符"),
             Locale = "zh-CN",
             Level = 1,
             Exp = 0,
@@ -421,7 +431,11 @@ public sealed class AuthController(
             {
                 AccountId = accountId,
                 AccountNormalized = accountId.ToUpperInvariant(),
-                Nickname = string.IsNullOrWhiteSpace(request.Nickname) ? accountId : request.Nickname.Trim(),
+                Nickname = string.IsNullOrWhiteSpace(request.Nickname)
+                    ? accountId
+                    : request.Nickname.Trim().Length <= 20
+                        ? request.Nickname.Trim()
+                        : accountId,   // dev-login 昵称超长时静默回退到 accountId
                 Locale = "zh-CN",
                 IsActive = true,
             };

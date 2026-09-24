@@ -37,8 +37,20 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-var connectionString = builder.Configuration.GetConnectionString("Default")!;
-builder.Services.AddDbContext<AppDbContext>(options => options.UseNpgsql(connectionString));
+var connectionString = builder.Configuration.GetConnectionString("Default");
+
+if (string.IsNullOrWhiteSpace(connectionString))
+{
+    throw new InvalidOperationException("必须配置 ConnectionStrings:Default 数据库连接字符串。");
+}
+
+if (!builder.Environment.IsDevelopment()
+    && connectionString.Contains("CHANGE_ME", StringComparison.OrdinalIgnoreCase))
+{
+    throw new InvalidOperationException("非开发环境禁止使用占位符数据库连接字符串（含 CHANGE_ME）。");
+}
+
+builder.Services.AddDbContext<AppDbContext>(options => options.UseNpgsql(connectionString!));
 builder.Services.AddScoped<IGameDbContext>(sp => sp.GetRequiredService<AppDbContext>());
 
 builder.Services.AddSingleton<StackExchange.Redis.IConnectionMultiplexer>(_ =>
@@ -82,6 +94,12 @@ if (!builder.Environment.IsDevelopment()
     && jwtKey.StartsWith("dev-only", StringComparison.OrdinalIgnoreCase))
 {
     throw new InvalidOperationException("非开发环境禁止使用开发 JWT 密钥。");
+}
+
+if (!builder.Environment.IsDevelopment()
+    && jwtKey.Contains("CHANGE_ME", StringComparison.OrdinalIgnoreCase))
+{
+    throw new InvalidOperationException("非开发环境禁止使用占位符 JWT 密钥（含 CHANGE_ME）。");
 }
 
 var signingKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey));
@@ -129,7 +147,7 @@ builder.Services.AddRateLimiter(options =>
     {
         context.HttpContext.Response.ContentType = "application/json";
         await context.HttpContext.Response.WriteAsync(
-            "{\"code\":\"TOO_MANY_REQUESTS\",\"message\":\"请求过于频繁，请稍后再试\"}",
+            "{\"code\":429,\"message\":\"请求过于频繁，请稍后再试\"}",
             token);
     };
 
@@ -218,7 +236,39 @@ app.Use(async (context, next) =>
 
 app.UseCors();
 
-if (app.Environment.IsDevelopment())
+// 静态贴图与美术资源直通（供 Cocos 预览与客户端 100% 稳定加载 2D 原画、三视图与序列帧动画）
+var clientTexturesPath = Path.GetFullPath(Path.Combine(builder.Environment.ContentRootPath, "..", "..", "Client", "assets", "textures"));
+if (Directory.Exists(clientTexturesPath))
+{
+    var textureProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(clientTexturesPath);
+    app.UseStaticFiles(new StaticFileOptions
+    {
+        FileProvider = textureProvider,
+        RequestPath = "/textures"
+    });
+    app.UseStaticFiles(new StaticFileOptions
+    {
+        FileProvider = textureProvider,
+        RequestPath = "/assets/textures"
+    });
+}
+var clientAssetsPath = Path.GetFullPath(Path.Combine(builder.Environment.ContentRootPath, "..", "..", "Client", "assets"));
+if (Directory.Exists(clientAssetsPath))
+{
+    app.UseStaticFiles(new StaticFileOptions
+    {
+        FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(clientAssetsPath),
+        RequestPath = "/assets"
+    });
+}
+
+
+// Swagger 可通过配置 Security:EnableSwagger 在任何环境独立开关；
+// 非 Development 时默认关闭，避免运维人员未设置环境变量导致 API 文档在生产暴露。
+var enableSwagger = app.Environment.IsDevelopment() ||
+    builder.Configuration.GetValue<bool>("Security:EnableSwagger");
+
+if (enableSwagger)
 {
     app.UseSwagger();
     app.UseSwaggerUI();
