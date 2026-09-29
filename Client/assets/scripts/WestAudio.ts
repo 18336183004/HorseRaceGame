@@ -1423,6 +1423,61 @@ export class WestAudio {
         }
     }
 
+    /** 终点高清高速相机快门快拍与镁光灯爆闪 (Photo Finish Camera Shutter) */
+    public static playCameraShutter(mode: AudioPlayMode = "COMMON"): void {
+        if (!this.soundEnabled) return;
+        const ctx = this.getContext();
+        const targetGain = this.getTargetGain(mode, true);
+        if (!ctx || !targetGain || !this.registerModeSound(mode, 0.22)) return;
+
+        try {
+            const now = ctx.currentTime;
+            // 1. 机械前帘快门轻巧撞击 (Click 1)
+            const bufferSize1 = Math.floor(ctx.sampleRate * 0.03);
+            const buffer1 = ctx.createBuffer(1, bufferSize1, ctx.sampleRate);
+            const out1 = buffer1.getChannelData(0);
+            for (let i = 0; i < bufferSize1; i++) {
+                out1[i] = (Math.random() * 2 - 1) * Math.exp(-i / (ctx.sampleRate * 0.006));
+            }
+            const src1 = ctx.createBufferSource();
+            src1.buffer = buffer1;
+            const filter1 = ctx.createBiquadFilter();
+            filter1.type = "highpass";
+            filter1.frequency.setValueAtTime(2200, now);
+            const gain1 = ctx.createGain();
+            gain1.gain.setValueAtTime(0.35, now);
+            gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.03);
+            src1.connect(filter1);
+            filter1.connect(gain1);
+            gain1.connect(targetGain);
+            src1.start(now);
+
+            // 2. 机械后帘闭合脆响与反光板复位 (Click 2, 延迟 45ms)
+            const t2 = now + 0.045;
+            const bufferSize2 = Math.floor(ctx.sampleRate * 0.05);
+            const buffer2 = ctx.createBuffer(1, bufferSize2, ctx.sampleRate);
+            const out2 = buffer2.getChannelData(0);
+            for (let i = 0; i < bufferSize2; i++) {
+                out2[i] = (Math.random() * 2 - 1) * Math.exp(-i / (ctx.sampleRate * 0.009));
+            }
+            const src2 = ctx.createBufferSource();
+            src2.buffer = buffer2;
+            const filter2 = ctx.createBiquadFilter();
+            filter2.type = "bandpass";
+            filter2.frequency.setValueAtTime(1800, t2);
+            filter2.Q.setValueAtTime(3.0, t2);
+            const gain2 = ctx.createGain();
+            gain2.gain.setValueAtTime(0.42, t2);
+            gain2.gain.exponentialRampToValueAtTime(0.001, t2 + 0.05);
+            src2.connect(filter2);
+            filter2.connect(gain2);
+            gain2.connect(targetGain);
+            src2.start(t2);
+        } catch {
+            // ignore
+        }
+    }
+
     /** 赛马并驾齐驱紧张弦乐短句 (Neck and Neck Tension) */
     public static playNeckAndNeckTension(mode: AudioPlayMode = "COMMON"): void {
         if (!this.soundEnabled) return;
@@ -2057,6 +2112,46 @@ export class WestAudio {
                 // 降级兜底已由前面的拟音完成
             }
         }
+    }
+
+    /** 🥕 合成马匹咀嚼新鲜胡萝卜清脆碎裂声 (Carrot Crunch FX) */
+    public static playCarrotCrunch(mode: AudioPlayMode = "COMMON"): void {
+        const ctx = this.getContext();
+        if (!ctx || !this.soundEnabled) return;
+
+        const targetGain = this.getTargetGain(mode, true);
+        if (!targetGain) return;
+        const now = ctx.currentTime;
+
+        // 生成两次短促的清脆断裂声 (Dual Crisp Crunch)
+        [0, 0.09].forEach((delay) => {
+            const t = now + delay;
+            const bufferSize = Math.floor(ctx.sampleRate * 0.06);
+            const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+            const data = buffer.getChannelData(0);
+            for (let i = 0; i < bufferSize; i++) {
+                data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (ctx.sampleRate * 0.015));
+            }
+
+            const noise = ctx.createBufferSource();
+            noise.buffer = buffer;
+
+            const bandpass = ctx.createBiquadFilter();
+            bandpass.type = "bandpass";
+            bandpass.frequency.setValueAtTime(2400 + Math.random() * 400, t);
+            bandpass.Q.setValueAtTime(4.0, t);
+
+            const gain = ctx.createGain();
+            gain.gain.setValueAtTime(0.45 * this.sfxVolume, t);
+            gain.gain.exponentialRampToValueAtTime(0.001, t + 0.055);
+
+            noise.connect(bandpass);
+            bandpass.connect(gain);
+            gain.connect(targetGain);
+
+            noise.start(t);
+            noise.stop(t + 0.06);
+        });
     }
 }
 

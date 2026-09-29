@@ -54,3 +54,6 @@ appsettings.*.Local.json
 secrets.json
 .env
 .env.*
+
+# ---------- Redis 快照 ----------
+*.rdb

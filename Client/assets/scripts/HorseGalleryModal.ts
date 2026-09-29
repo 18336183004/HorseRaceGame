@@ -1,8 +1,9 @@
-import { _decorator, Component, Node, Graphics, Color, Label, UITransform, Layers, Button, Sprite, EventTouch, HorizontalTextAlignment } from "cc";
+import { _decorator, Component, Node, Graphics, Color, Label, UITransform, Layers, Button, Sprite, EventTouch, HorizontalTextAlignment, Vec3, tween } from "cc";
 import { HorseAssetRegistry, HorseProfile, FoalGrowthStage } from "./HorseAssetRegistry";
 import { HorseSprites } from "./HorseSprites";
 import { WestColors } from "./WestTheme";
 import { HorseVisual2D } from "./HorseVisual2D";
+import { WestAudio } from "./WestAudio";
 
 const { ccclass } = _decorator;
 
@@ -37,6 +38,9 @@ export class HorseGalleryModal extends Component {
     private isLiveMotionMode: boolean = false;
     private modeToggleLabel: Label | null = null;
     private actionChipsBar: Node | null = null;
+
+    // 成长四阶段时间轴滑块手柄
+    private scrubberKnobNode: Node | null = null;
 
     public static show(horseNo: number = 1, parentNode?: Node, initialStage: FoalGrowthStage = FoalGrowthStage.Adult) {
         if (this.instance && (!this.instance.isValid || !this.instance.node || !this.instance.node.isValid)) {
@@ -356,7 +360,7 @@ export class HorseGalleryModal extends Component {
         const infoNode = new Node("InfoTextNode");
         infoNode.layer = Layers.Enum.UI_2D;
         panel.addChild(infoNode);
-        infoNode.setPosition(0, -125, 0);
+        infoNode.setPosition(0, -118, 0);
         const infoLblNode = new Node("DescLbl");
         infoLblNode.layer = Layers.Enum.UI_2D;
         infoNode.addChild(infoLblNode);
@@ -366,13 +370,69 @@ export class HorseGalleryModal extends Component {
         this.descLabel.color = WestColors.LEATHER_DARK;
         this.descLabel.horizontalAlign = HorizontalTextAlignment.LEFT;
         this.descLabel.overflow = Label.Overflow.RESIZE_HEIGHT;
-        infoLblNode.addComponent(UITransform).setContentSize(630, 48);
+        infoLblNode.addComponent(UITransform).setContentSize(630, 42);
 
-        // 7. 幼驹成长四阶段切换按钮栏 (幼驹期 -> 青年期 -> 成年期 -> 职业赛马)
+        // 7. 幼驹成长四阶段时间轴导轨滑块 (Growth Timeline Scrubber)
+        const scrubberTrack = new Node("GrowthScrubberTrack");
+        scrubberTrack.layer = Layers.Enum.UI_2D;
+        panel.addChild(scrubberTrack);
+        scrubberTrack.setPosition(0, -154, 0);
+        scrubberTrack.addComponent(UITransform).setContentSize(600, 24);
+
+        const tg = scrubberTrack.addComponent(Graphics);
+        // 导轨背景 (黄铜木纹导轨)
+        tg.fillColor = WestColors.WOOD_DARK;
+        tg.roundRect(-250, -4, 500, 8, 4);
+        tg.fill();
+        tg.strokeColor = WestColors.BRASS_FRAME;
+        tg.lineWidth = 1.2;
+        tg.roundRect(-250, -4, 500, 8, 4);
+        tg.stroke();
+
+        // 4 个里程碑节点指示刻度
+        for (let i = 0; i < 4; i++) {
+            const dotX = -225 + i * 150;
+            tg.fillColor = WestColors.GOLD_BRIGHT;
+            tg.circle(dotX, 0, 5);
+            tg.fill();
+            tg.strokeColor = WestColors.WOOD_DARK;
+            tg.lineWidth = 1.2;
+            tg.circle(dotX, 0, 5);
+            tg.stroke();
+        }
+
+        // 滑块手柄 (Horseshoe / Brass Knob)
+        const knob = new Node("ScrubberKnob");
+        knob.layer = Layers.Enum.UI_2D;
+        scrubberTrack.addChild(knob);
+        knob.setPosition(-225, 0, 0);
+        knob.addComponent(UITransform).setContentSize(28, 28);
+        const kg = knob.addComponent(Graphics);
+        kg.fillColor = WestColors.GOLD_BRIGHT;
+        kg.circle(0, 0, 9);
+        kg.fill();
+        kg.strokeColor = WestColors.LEATHER_DARK;
+        kg.lineWidth = 2.0;
+        kg.circle(0, 0, 9);
+        kg.stroke();
+        this.scrubberKnobNode = knob;
+
+        // 支持点击或拖拽导轨快速换档
+        const onScrubberTouch = (e: EventTouch): void => {
+            const loc = e.getUILocation();
+            const ut = scrubberTrack.getComponent(UITransform);
+            if (!ut) return;
+            const localPos = ut.convertToNodeSpaceAR(new Vec3(loc.x, loc.y, 0));
+            this.handleScrubberTouch(localPos.x);
+        };
+        scrubberTrack.on(Node.EventType.TOUCH_START, onScrubberTouch, this);
+        scrubberTrack.on(Node.EventType.TOUCH_MOVE, onScrubberTouch, this);
+
+        // 8. 幼驹成长四阶段切换按钮栏 (幼驹期 -> 青年期 -> 成年期 -> 职业赛马)
         const stageBar = new Node("StageButtonBar");
         stageBar.layer = Layers.Enum.UI_2D;
         panel.addChild(stageBar);
-        stageBar.setPosition(0, -200, 0);
+        stageBar.setPosition(0, -196, 0);
 
         const stages = [
             { id: FoalGrowthStage.Foal, name: "① 幼驹期 (0~1岁)" },
@@ -411,9 +471,30 @@ export class HorseGalleryModal extends Component {
 
             const b = btn.addComponent(Button);
             b.node.on(Button.EventType.CLICK, () => {
+                WestAudio.playChipClink();
                 this.currentStage = s.id;
                 this.refreshDisplay();
             }, this);
+        }
+    }
+
+    /** 响应成长时间轴拖拽与点击换档 */
+    private handleScrubberTouch(localX: number): void {
+        const stageOffsets = [-225, -75, 75, 225];
+        let closestIdx = 0;
+        let minDiff = 99999;
+        for (let i = 0; i < stageOffsets.length; i++) {
+            const diff = Math.abs(localX - stageOffsets[i]);
+            if (diff < minDiff) {
+                minDiff = diff;
+                closestIdx = i;
+            }
+        }
+        const targetStage = (closestIdx + 1) as FoalGrowthStage;
+        if (targetStage !== this.currentStage) {
+            this.currentStage = targetStage;
+            WestAudio.playChipClink();
+            this.refreshDisplay();
         }
     }
 
@@ -448,6 +529,14 @@ export class HorseGalleryModal extends Component {
             item.label.color = isSelected ? WestColors.GOLD_BRIGHT : Color.WHITE;
         }
 
+        // 平滑滑动成长时间轴手柄
+        if (this.scrubberKnobNode && this.scrubberKnobNode.isValid) {
+            const targetX = -225 + stageIdx * 150;
+            tween(this.scrubberKnobNode)
+                .to(0.18, { position: new Vec3(targetX, 0, 0) }, { easing: "sineOut" })
+                .start();
+        }
+
         this.renderShowcaseCanvas(horse);
         this.renderOrthoCanvas(horse);
     }
@@ -480,10 +569,10 @@ export class HorseGalleryModal extends Component {
                 }
             }
         } else {
-            // 展示真实高清 2D 油画艺术立绘大图
+            // 展示真实高清 2D 油画艺术立绘大图（采用渐进式加载：精灵秒级占位 -> 4K Showcase 渐变载入，彻底消除白屏等待）
             if (this.showcaseImgNode && this.showcaseImgNode.isValid) {
                 this.showcaseImgNode.active = true;
-                HorseSprites.applyHorseShowcase(this.showcaseImgNode, horse.horseNo);
+                HorseSprites.applyShowcaseProgressive(this.showcaseImgNode, horse.horseNo);
             }
             if (this.liveHorseNode) {
                 this.liveHorseNode.active = false;
@@ -534,5 +623,24 @@ export class HorseGalleryModal extends Component {
                 HorseSprites.applyFoalStage(this.orthoImgNode, this.currentStage, horse.horseNo);
             }
         }
+    }
+
+    protected onDestroy(): void {
+        if (HorseGalleryModal.instance === this) {
+            HorseGalleryModal.instance = null;
+        }
+        this.modalRoot = null;
+        this.titleLabel = null;
+        this.descLabel = null;
+        this.showcaseBox = null;
+        this.showcaseImgNode = null;
+        this.orthoBox = null;
+        this.orthoImgNode = null;
+        this.orthoTitleLbl = null;
+        this.liveHorseNode = null;
+        this.liveHorseVisual = null;
+        this.scrubberKnobNode = null;
+        this.stageButtonGraphics.length = 0;
+        HorseSprites.clearGalleryCache();
     }
 }

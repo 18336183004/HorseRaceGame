@@ -1,4 +1,4 @@
-import { Color, Graphics, Node, UITransform } from "cc";
+import { Color, Graphics, Node } from "cc";
 import { WestTextures } from "./WestTextures";
 import { WestPerformance } from "./WestPerformance";
 
@@ -1926,7 +1926,6 @@ export class WestStyle {
 
                 g.fillColor = new Color(250, 250, 250, 255);
                 const diaW = width / 2;
-                const diaH = height / 2;
                 // 中心菱形
                 g.moveTo(0, halfH - 2);
                 g.lineTo(diaW * 0.6, 0);

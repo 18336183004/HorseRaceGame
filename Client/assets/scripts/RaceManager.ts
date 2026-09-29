@@ -1,6 +1,5 @@
 import { Component, Label, _decorator } from "cc";
 import { ApiClient } from "./ApiClient";
-import { ClientConfig } from "./ClientConfig";
 import { HorseManager } from "./HorseManager";
 import {
     PlaceBetResponse,

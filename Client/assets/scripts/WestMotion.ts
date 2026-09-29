@@ -1,4 +1,4 @@
-import { Node, Quat, Tween, UIOpacity, Vec3, tween } from "cc";
+import { Node, Tween, UIOpacity, Vec3, tween } from "cc";
 import { WestAudio } from "./WestAudio";
 
 /**

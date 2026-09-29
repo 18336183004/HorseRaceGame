@@ -663,6 +663,11 @@ export class GameApp extends Component {
             }
         }
 
+        // 实时通知 2D 跑道系统冲刺特写光效与暗角
+        if (this.raceTrack2D && this.raceTrack2D.isValid) {
+            this.raceTrack2D.setSprintProgress(leaderProgress, leaderLaneX);
+        }
+
         // 动态同步马蹄声节奏：常规巡航 1.0x 步频，最后 30% 冲刺阶段平滑加速至 1.45x (约 420 步/分)
         if (leaderProgress >= 0.70 && leaderProgress < 0.98) {
             const sprintCadence = 1.0 + (leaderProgress - 0.70) * 1.5;
@@ -672,43 +677,53 @@ export class GameApp extends Component {
             WestAudio.setGallopCadence(1.0);
         }
 
-        // 冲刺直道平滑变焦 (Sprint Dynamic Zoom 1.12x)
+        // 冲刺直道极速特写推镜 (Sprint Dynamic Close-Up Zoom: 1.0x -> 1.20x)
         if (leaderProgress >= 0.70 && leaderProgress < 0.98) {
-            const zoomT = Math.min(1.0, (leaderProgress - 0.70) / 0.15);
-            this.cameraTargetScale = 1.0 + zoomT * 0.12;
+            const zoomT = Math.min(1.0, (leaderProgress - 0.70) / 0.14);
+            this.cameraTargetScale = 1.0 + zoomT * 0.20; // 放大至 1.20x 特写
+        } else if (leaderProgress >= 0.98) {
+            this.cameraTargetScale = 1.10; // 终点定格微缩放
         } else {
             this.cameraTargetScale = 1.0;
         }
 
-        // 赛程 < 20% 或 > 96%（接近终点）时复位摄像机到默认中心
-        if (leaderProgress < 0.20 || leaderProgress > 0.96) {
+        // 智能多阶段竞速导播运镜 (Multi-Phase Cinematic Director Camera):
+        if (leaderProgress <= 0.001) {
+            // 比赛未开始：平稳居中
             this.cameraTargetX = 360;
+        } else if (leaderProgress < 0.12) {
+            // 阶段 1：起跑出闸聚焦门架与开闸爆发力
+            this.cameraTargetX = 400;
+        } else if (leaderProgress > 0.96) {
+            // 阶段 4：终点毫厘裁决定格冲线 (Finish Line Lock)
+            this.cameraTargetX = 255;
         } else {
-            // arenaBox 宽 696px，跑道像素范围 -270 ~ 270（共 540px）
-            // 跑道中心在 arenaBox 局部坐标 X=0，对应 pageRoot 绝对 X = 360
-            // 让领先马保持在视口中心偏左约 60px 处（留出右侧追赶空间）
-            // leaderLaneX 为局部坐标 -270~270，转换到 pageRoot 偏移：360 - leaderLaneX * 0.35
-            const followStrength = 0.35; // 越大跟踪幅度越大（最大偏移 ~94px）
+            // 阶段 2 & 3：中程群马角逐与直道大冲刺平滑跟踪
+            const followStrength = leaderProgress >= 0.70 ? 0.42 : 0.38;
             const targetRaw = 360 - leaderLaneX * followStrength;
-            // 限制偏移在 [280, 440]，避免赛道两端大幅穿帮
-            this.cameraTargetX = Math.max(280, Math.min(440, targetRaw));
+            // 限制平滑偏移区间在 [250, 470]，视野更加开阔纵深
+            this.cameraTargetX = Math.max(250, Math.min(470, targetRaw));
         }
 
         // 基于 dt 的指数衰减插值 (Framerate-independent exponential smoothing)
         const safeDt = Math.max(0.001, Math.min(dt, 0.1));
-        const decayFactor = 1 - Math.exp(-2.5 * safeDt);
+        const decayFactor = 1 - Math.exp(-2.8 * safeDt);
         this.cameraCurrentX += (this.cameraTargetX - this.cameraCurrentX) * decayFactor;
 
-        const scaleDecay = 1 - Math.exp(-3.0 * safeDt);
+        const scaleDecay = 1 - Math.exp(-3.2 * safeDt);
         this.cameraCurrentScale += (this.cameraTargetScale - this.cameraCurrentScale) * scaleDecay;
 
-        // 冲刺直道高潮赛道微震颤 (Sprint Tension Micro-Rumble)
+        // 竞速颠簸与冲刺微震颤 (Galloping Pacing Sway & Sprint Rumble)
         let rumbleX = 0;
         let rumbleY = 0;
-        if (leaderProgress >= 0.80 && leaderProgress < 0.98) {
-            const intensity = (leaderProgress - 0.80) / 0.18;
-            rumbleX = (Math.random() - 0.5) * 3.0 * intensity;
-            rumbleY = (Math.random() - 0.5) * 2.0 * intensity;
+        if (leaderProgress > 0.05 && leaderProgress < 0.70) {
+            // 中程奔腾节奏微颠簸 (4.5Hz，让画面极具奔跑生命力)
+            rumbleY = Math.sin(Date.now() * 0.014) * 1.2;
+        } else if (leaderProgress >= 0.70 && leaderProgress < 0.98) {
+            // 冲刺高潮赛道重蹄狂暴震颤
+            const intensity = (leaderProgress - 0.70) / 0.28;
+            rumbleX = (Math.random() - 0.5) * 4.0 * intensity;
+            rumbleY = (Math.random() - 0.5) * 2.8 * intensity;
         }
 
         const currentPos = this.arenaTrackNode.getPosition();
@@ -736,6 +751,17 @@ export class GameApp extends Component {
         radarG.lineTo(-268, 6);
         radarG.stroke();
 
+        // 绘制 1/4 (25%), HALF (50%), 3/4 (75%) 微型里程碑刻度线
+        radarG.strokeColor = new Color(255, 255, 255, 75);
+        radarG.lineWidth = 1.0;
+        radarG.moveTo(-133, -3);
+        radarG.lineTo(-133, 3);
+        radarG.moveTo(0, -4);
+        radarG.lineTo(0, 4);
+        radarG.moveTo(133, -3);
+        radarG.lineTo(133, 3);
+        radarG.stroke();
+
         radarG.strokeColor = WestColors.BANDANA_RED;
         radarG.lineWidth = 2.0;
         radarG.moveTo(268, -6);
@@ -760,16 +786,27 @@ export class GameApp extends Component {
 
         if (list.length === 0) return;
 
-        // 绘制 6 匹马在微缩雷达上的光标位置
+        const leaderHorseNo = [...list].sort((a, b) => b.progress - a.progress)[0]?.horseNo ?? -1;
+
+        // 绘制 6 匹马在微缩雷达上的光标位置与领跑金色光圈
         list.forEach((item) => {
             const rx = -266 + Math.max(0, Math.min(1.0, item.progress)) * 532;
             const c = horseColors[(item.horseNo - 1) % horseColors.length] || WestColors.GOLD_BRIGHT;
+            const isLeader = item.horseNo === leaderHorseNo && item.progress > 0.02;
+
+            if (isLeader) {
+                radarG.strokeColor = new Color(255, 215, 40, 200);
+                radarG.lineWidth = 1.6;
+                radarG.circle(rx, 0, 7.2);
+                radarG.stroke();
+            }
+
             radarG.fillColor = c;
-            radarG.circle(rx, 0, 5);
+            radarG.circle(rx, 0, isLeader ? 5.2 : 4.4);
             radarG.fill();
-            radarG.strokeColor = new Color(255, 255, 255, 200);
-            radarG.lineWidth = 1;
-            radarG.circle(rx, 0, 5);
+            radarG.strokeColor = isLeader ? WestColors.GOLD_BRIGHT : new Color(255, 255, 255, 200);
+            radarG.lineWidth = 1.0;
+            radarG.circle(rx, 0, isLeader ? 5.2 : 4.4);
             radarG.stroke();
         });
 
@@ -803,6 +840,17 @@ export class GameApp extends Component {
         radarG.lineWidth = 1.5;
         radarG.moveTo(-268, -6);
         radarG.lineTo(-268, 6);
+        radarG.stroke();
+
+        // 绘制 1/4 (25%), HALF (50%), 3/4 (75%) 微型里程碑刻度线
+        radarG.strokeColor = new Color(255, 255, 255, 75);
+        radarG.lineWidth = 1.0;
+        radarG.moveTo(-133, -3);
+        radarG.lineTo(-133, 3);
+        radarG.moveTo(0, -4);
+        radarG.lineTo(0, 4);
+        radarG.moveTo(133, -3);
+        radarG.lineTo(133, 3);
         radarG.stroke();
 
         radarG.strokeColor = WestColors.BANDANA_RED;
@@ -1017,9 +1065,10 @@ export class GameApp extends Component {
 
         // 比赛起步 5% 到 99.8% 冲线区间展示皇冠
         if (leader.progress >= 0.05 && leader.progress < 0.998) {
-            const laneY = 135 - (leader.laneIdx + 1) * 41;
+            const laneY = RaceTrack2D.getLaneY(leader.laneIdx);
+            const ds = RaceTrack2D.getLaneDepthScale(leader.laneIdx);
             const targetX = leader.laneX + 2;
-            const targetY = laneY + 36; // 浮在马头上空
+            const targetY = laneY + 44 * ds; // 浮在马头与骑师头盔上空
 
             if (!this.leaderCrownNode.active) {
                 this.leaderCrownNode.active = true;
@@ -1126,6 +1175,15 @@ export class GameApp extends Component {
         if (runnerUp) {
             const gap = leader.laneX - runnerUp.laneX;
             const top2Combo = `${Math.min(leader.horseNo, runnerUp.horseNo)}-${Math.max(leader.horseNo, runnerUp.horseNo)}`;
+
+            // 实时驱动战驹并驾齐驱对抗状态机 (Head-to-Head Dueling)
+            const isCloseDuel = gap < 42 && leader.progress > 0.25 && leader.progress < 0.97;
+            for (const [hNo, ctrl] of this.horses.entries()) {
+                if (ctrl && ctrl.isValid) {
+                    const dueling = Boolean(isCloseDuel && (hNo === leader.horseNo || hNo === runnerUp.horseNo));
+                    ctrl.setDueling(dueling);
+                }
+            }
 
             // 直道冲刺阶段 (progress > 0.45) 且两匹马胶着缠斗 (< 38px)
             if (leader.progress > 0.45 && gap < 38) {
@@ -1820,10 +1878,11 @@ export class GameApp extends Component {
         const currentModeHorses = this.getModeHorses(this.betMode) ?? [];
         (currentModeHorses ?? []).forEach((horseItem, newLaneIdx) => {
             const horseNo = horseItem.horseNo;
-            const targetLaneY = 135 - (newLaneIdx + 1) * 41;
+            const targetLaneY = RaceTrack2D.getLaneY(newLaneIdx);
             const horseCtrl = this.horses.get(horseNo);
             if (horseCtrl && horseCtrl.node && horseCtrl.node.parent && horseCtrl.node.parent.isValid) {
                 horseCtrl.node.parent.setPosition(0, targetLaneY, 0);
+                horseCtrl.setLaneIndex(newLaneIdx);
             }
         });
 
@@ -4914,6 +4973,25 @@ export class GameApp extends Component {
         );
         const countdownLabel = this.text(saloonHeaderBar, "", -22, 6, 14, WestColors.BANDANA_RED);
 
+        // 🔐 实时可验证公平性极简抽屉徽章 (Provably Fair Quick Badge)
+        const fairBadge = this.box(saloonHeaderBar, -22, -10, 56, 18, WestColors.WOOD_DARK, 4);
+        const fbg = fairBadge.getComponent(Graphics);
+        if (fbg) {
+            fbg.strokeColor = WestColors.GOLD_METALLIC;
+            fbg.lineWidth = 1.0;
+            fbg.roundRect(-28, -9, 56, 18, 4);
+            fbg.stroke();
+        }
+        this.text(fairBadge, "🔐 公平", 0, 0, 10, WestColors.GOLD_BRIGHT);
+        this.bindClick(fairBadge, () => {
+            void this.buildFairnessModal(
+                root,
+                this.round?.resultSeed ?? "",
+                this.round?.resultSeedCommitment ?? "",
+                "ResultEngine-V1.2"
+            );
+        });
+
         // 走势徽章：右半侧 + 📊 走势路单抽屉入口
         this.text(saloonHeaderBar, `📜 走势:`, 68, 0, 12, WestColors.GOLD_BRIGHT);
         const chipColors = [
@@ -5361,6 +5439,35 @@ export class GameApp extends Component {
             const titleLabel = this.text(cardNode, titleText, 14, 11, isEn ? 13 : 15, isSelected ? WestColors.INK_DARK : WestColors.TEXT_PARCHMENT);
             const subLabel = this.text(cardNode, subText, 14, -12, 12, isSelected ? WestColors.INK_MUTED : WestColors.TEXT_MUTED);
 
+            // 热门大热 / 高倍冷门专属标签 (Live Odds Hot / Longshot Badges)
+            const winModeHorses = this.getModeHorses("WIN");
+            const allOdds = winModeHorses.map((h: { odds: number | string }) => Number(h.odds));
+            const minOdds = Math.min(...allOdds);
+            const isHot = Number(horse.odds) === minOdds || Number(horse.odds) <= 2.2;
+            const isLongshot = Number(horse.odds) >= 8.0;
+
+            if (isHot) {
+                const hotTag = this.box(cardNode, 104, 14, 46, 17, new Color(195, 55, 20, 230), 4);
+                const hg = hotTag.getComponent(Graphics);
+                if (hg) {
+                    hg.strokeColor = WestColors.GOLD_BRIGHT;
+                    hg.lineWidth = 1.0;
+                    hg.roundRect(-23, -8.5, 46, 17, 4);
+                    hg.stroke();
+                }
+                this.text(hotTag, "🔥 HOT", 0, 0, 9, WestColors.GOLD_BRIGHT);
+            } else if (isLongshot) {
+                const lsTag = this.box(cardNode, 98, 14, 58, 17, new Color(25, 70, 105, 230), 4);
+                const lg = lsTag.getComponent(Graphics);
+                if (lg) {
+                    lg.strokeColor = new Color(130, 215, 255, 230);
+                    lg.lineWidth = 1.0;
+                    lg.roundRect(-29, -8.5, 58, 17, 4);
+                    lg.stroke();
+                }
+                this.text(lsTag, "💎 LONG", 0, 0, 8, new Color(190, 240, 255, 255));
+            }
+
             horseCards.push({
                 cardNode,
                 horseNo: horse.horseNo,
@@ -5734,6 +5841,8 @@ export class GameApp extends Component {
                 WestMotion.playChipFloat(chipNode);
                 this.selectedChip = val;
                 this.amount = val * this.betMultiplier;
+                // 抛物线飞向预览牛皮纸账单
+                this.spawnFlyingChip(deskBox, chipX[idx], -50, 0, -8, val);
                 updateRaceUI();
             });
         });
@@ -6527,9 +6636,12 @@ export class GameApp extends Component {
         lg.stroke();
 
         this.text(pfNode, "📷 PHOTO FINISH · 终点毫厘激光定格判定中", 0, 14, 15, WestColors.GOLD_BRIGHT);
-        this.text(pfNode, "⚡ 冠亚军鼻尖微距压线 · 高速摄像帧裁决", 0, -14, 12, WestColors.CHALK_YELLOW);
+        this.text(pfNode, "⚡ 冠亚军鼻尖微距压线 · 点击放大查阅", 0, -14, 12, WestColors.CHALK_YELLOW);
         pfNode.active = false;
         this.photoFinishBannerNode = pfNode;
+        this.bindClick(pfNode, () => {
+            this.openPhotoFinishModal();
+        });
 
         // 起点线与终点线立柱 (红白格相间终点线 + 原木栅栏立柱，高度拓至 310px 黄金撑满)
         const startPost = this.box(arenaBox, -270, -10, 6, 310, WestColors.LEATHER_MEDIUM, 2);
@@ -6554,18 +6666,17 @@ export class GameApp extends Component {
         this.text(finishPost, "🏁", 0, 148, 16);
 
         const currentModeHorses = this.getModeHorses(this.betMode) ?? [];
-        for (const h of currentModeHorses) {
-            HorseSprites.loadHorseGallopAnimation(h.horseNo, () => {});
-        }
+        HorseSprites.preloadRaceBatch(currentModeHorses.map(h => h.horseNo));
         for (let laneIdx = 0; laneIdx < 6; laneIdx += 1) {
             const horseItem = currentModeHorses[laneIdx];
-            const laneY = 135 - (laneIdx + 1) * 41;
+            const laneY = RaceTrack2D.getLaneY(laneIdx);
+            const ds = RaceTrack2D.getLaneDepthScale(laneIdx);
             // 跑道透明容器节点（底层已由 RaceTrack2D 渲染细腻的 2D 草地/泥地/细沙地表与白灰标线）
             const lane = new Node(`Lane_${laneIdx + 1}`);
             lane.layer = arenaBox.layer || Layers.Enum.UI_2D;
             arenaBox.addChild(lane);
             lane.setPosition(0, laneY, 0);
-            lane.addComponent(UITransform).setContentSize(676, 38);
+            lane.addComponent(UITransform).setContentSize(676, Math.round(38 * ds));
 
             // 本轮实际参赛马匹不足 6 匹时，该跑道仅保留赛道，不创建幻影马，避免马号重复覆盖 this.horses 映射。
             if (!horseItem) {
@@ -6574,16 +6685,17 @@ export class GameApp extends Component {
             const horseNo = horseItem.horseNo;
 
             // 赛道马号木标牌（支持点击查看 2D 写实古典画作与解剖三视图）
-            const badge = this.box(lane, -318, 0, 28, 28, WestColors.WOOD_DARK, 6);
+            const badgeSize = Math.round(28 * ds);
+            const badge = this.box(lane, -318, 0, badgeSize, badgeSize, WestColors.WOOD_DARK, 6);
             const bg = badge.getComponent(Graphics);
             const hColor = horseColors[(horseNo - 1) % horseColors.length] || WestColors.GOLD_BRIGHT;
             if (bg) {
                 bg.strokeColor = hColor;
                 bg.lineWidth = 1.8;
-                bg.roundRect(-14, -14, 28, 28, 6);
+                bg.roundRect(-badgeSize / 2, -badgeSize / 2, badgeSize, badgeSize, 6);
                 bg.stroke();
             }
-            this.text(badge, `${horseNo}`, 0, 0, 16, hColor);
+            this.text(badge, `${horseNo}`, 0, 0, Math.round(16 * ds), hColor);
             const badgeBtn = badge.addComponent(Button);
             badgeBtn.node.on(Button.EventType.CLICK, () => {
                 HorseGalleryModal.show(horseNo, this.node);
@@ -6602,7 +6714,7 @@ export class GameApp extends Component {
             horseNode.layer = lane.layer || Layers.Enum.UI_2D;
             lane.addChild(horseNode);
             horseNode.setPosition(-270, 0);
-            horseNode.addComponent(UITransform).setContentSize(48, 48);
+            horseNode.addComponent(UITransform).setContentSize(116, 86);
 
             // 挂载 2D 写实赛马表现组件（模拟 18-20 世纪纯血马骨骼起伏律动与贴图）
             const visual2D = horseNode.addComponent(HorseVisual2D);
@@ -6616,6 +6728,11 @@ export class GameApp extends Component {
             controller.setRaceTrack2D(this.raceTrack2D);
             this.horses.set(horseNo, controller);
 
+            // 下注等待阶段展现真实赛马闸位待机呼吸与小动作 (刨地/打响鼻)
+            if (this.round?.state === RaceState.Betting) {
+                controller.setPreRaceIdle(Number(this.round.id ?? 0) + horseNo);
+            }
+
             // 若玩家本轮已押注该马匹，在其头顶悬浮常驻 🎯 瞄准角标，方便赛中实时聚焦追踪
             const isBetHorse = this.myRoundOrders.some(
                 (o) => o.horseNo === horseNo || o.secondHorseNo === horseNo || o.thirdHorseNo === horseNo,
@@ -6624,7 +6741,7 @@ export class GameApp extends Component {
                 const betBadgeNode = new Node(`BetBadge${horseNo}`);
                 betBadgeNode.layer = horseNode.layer || Layers.Enum.UI_2D;
                 horseNode.addChild(betBadgeNode);
-                betBadgeNode.setPosition(0, 32, 0);
+                betBadgeNode.setPosition(0, 46, 0);
                 this.text(betBadgeNode, "🎯", 0, 0, 16);
             }
         }
@@ -6838,9 +6955,7 @@ export class GameApp extends Component {
             this.round.horses = [];
         }
         if (this.round?.horses && this.round.horses.length > 0) {
-            for (const h of this.round.horses) {
-                HorseSprites.loadHorseGallopAnimation(h.horseNo, () => {});
-            }
+            HorseSprites.preloadRaceBatch(this.round.horses.map(h => h.horseNo));
         }
         if (this.round && this.signalr) {
             this.signalr.setRound(this.round.id);
@@ -8257,15 +8372,32 @@ export class GameApp extends Component {
         },
         isEn: boolean,
     ): void {
+        // 终点毫厘定格相片查阅按钮 (Photo Finish Magnifier)
+        if (this.round?.isPhotoFinish) {
+            this.westernButton(
+                resultBox,
+                isEn ? "📷 Inspect Slit-Scan Photo Finish" : "📷 查阅官方终点毫厘定格相片 (PHOTO FINISH)",
+                0,
+                -166,
+                480,
+                36,
+                () => {
+                    this.openPhotoFinishModal(this.round?.photoFinishGapSeconds ?? undefined);
+                },
+                true,
+                14,
+            );
+        }
+
         // 赛果公允性透明核验按钮 (Provably Fair)
         if (responseData.resultSeedCommitment) {
             this.saloonButton(
                 resultBox,
                 `${I18n.t("fairness.verifyBtn")} (PROVABLY FAIR)`,
                 0,
-                -205,
+                this.round?.isPhotoFinish ? -212 : -205,
                 480,
-                38,
+                36,
                 () => {
                     void this.buildFairnessModal(
                         root,
@@ -8409,6 +8541,226 @@ export class GameApp extends Component {
             return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
         }
         return "";
+    }
+
+    /**
+     * 生成拟物化筹码抛物线飞行动效 (Tactile Parabolic Flying Chips)
+     * 在父容器中划过二阶贝塞尔抛物线轨迹飞向目标位置，落地触发清脆敲击音效。
+     */
+    private spawnFlyingChip(
+        parent: Node,
+        startX: number,
+        startY: number,
+        targetX: number,
+        targetY: number,
+        val: number,
+        onComplete?: () => void
+    ): void {
+        if (!parent || !parent.isValid) return;
+
+        const chipNode = new Node("FlyingChip");
+        chipNode.layer = parent.layer || Layers.Enum.UI_2D;
+        parent.addChild(chipNode);
+        chipNode.setPosition(startX, startY, 0);
+        chipNode.addComponent(UITransform).setContentSize(42, 42);
+
+        WestStyle.drawPokerChip(chipNode, 42, 42, val, true);
+        this.text(chipNode, `${val}`, 0, 0, 11, WestColors.GOLD_BRIGHT);
+
+        const arcHeight = 70 + Math.random() * 25;
+        const midX = (startX + targetX) / 2 + (Math.random() - 0.5) * 20;
+        const midY = Math.max(startY, targetY) + arcHeight;
+
+        const duration = 0.36;
+
+        tween(chipNode)
+            .to(
+                duration,
+                { angle: (Math.random() > 0.5 ? 1 : -1) * (180 + Math.random() * 180) },
+                {
+                    easing: "quadOut",
+                    onUpdate: (_target, ratio) => {
+                        if (!chipNode || !chipNode.isValid) return;
+                        const t = ratio ?? 0;
+                        const oneMinusT = 1 - t;
+                        const curX = oneMinusT * oneMinusT * startX + 2 * oneMinusT * t * midX + t * t * targetX;
+                        const curY = oneMinusT * oneMinusT * startY + 2 * oneMinusT * t * midY + t * t * targetY;
+                        chipNode.setPosition(curX, curY, 0);
+                        const scale = 1.0 + Math.sin(t * Math.PI) * 0.35;
+                        chipNode.setScale(scale, scale, 1);
+                    },
+                }
+            )
+            .call(() => {
+                WestAudio.playChipClink();
+                WestHaptics.betClick();
+                if (chipNode && chipNode.isValid) {
+                    chipNode.destroy();
+                }
+                onComplete?.();
+            })
+            .start();
+    }
+
+    /**
+     * 终点毫厘裁决相片定格透镜弹窗 (Slit-Scan Photo Finish Magnifier Modal)
+     * 18-20世纪维多利亚经典红木相框 + 狭缝扫描底片 + 微秒标尺 + 激光测距 + 官方认证公章
+     */
+    private openPhotoFinishModal(
+        gapSeconds?: number,
+        topHorses?: Array<{ horseNo: number; laneIdx: number }>
+    ): void {
+        const root = this.pageRoot;
+        if (!root || !root.isValid) return;
+
+        WestAudio.playCameraShutter(this.getAudioMode());
+        WestHaptics.photoFinishTension();
+
+        const gap = gapSeconds ?? this.round?.photoFinishGapSeconds ?? 0.038;
+        const gapCm = (gap * 14.5).toFixed(1);
+
+        // 获取冠亚军马匹编号
+        let h1 = 1;
+        let h2 = 2;
+        if (topHorses && topHorses.length >= 2) {
+            h1 = topHorses[0].horseNo;
+            h2 = topHorses[1].horseNo;
+        } else if (this.round && this.round.horses && this.round.horses.length >= 2) {
+            const sorted = [...this.round.horses].sort((a, b) => Number(a.odds) - Number(b.odds));
+            h1 = sorted[0]?.horseNo ?? 1;
+            h2 = sorted[1]?.horseNo ?? 2;
+        }
+
+        const mask = this.createModalMask(root, new Color(0, 0, 0, 225));
+        const card = this.grandSaloonBox(mask, 0, 0, 680, 720, 16, WestColors.WOOD_DARK, WestColors.BRASS_FRAME);
+        this.attachModalShield(mask, card, () => mask.destroy());
+        this.addModalCloseBtn(card, 680, 720, () => mask.destroy());
+
+        // 顶部复古标题铭牌
+        const titleBox = this.chalkboardBox(card, 0, 310, 640, 56, 6);
+        this.text(titleBox, "📷 官方狭缝扫描·终点毫厘定格裁决", 0, 10, 20, WestColors.GOLD_BRIGHT);
+        this.text(titleBox, "OFFICIAL SLIT-SCAN PHOTO FINISH ARCHIVE · 精度 < 0.001s", 0, -14, 12, WestColors.TEXT_PARCHMENT);
+
+        // 中间核心相片视窗：深色暗室冲洗胶片色调 (640 x 300)
+        const photoStrip = this.box(card, 0, 105, 640, 300, new Color(22, 20, 18, 255), 8);
+        const pg = photoStrip.getComponent(Graphics);
+        if (pg) {
+            pg.strokeColor = WestColors.BRASS_FRAME;
+            pg.lineWidth = 2.0;
+            pg.roundRect(-320, -150, 640, 300, 8);
+            pg.stroke();
+
+            // 胶片齿孔 (Film Sprocket Holes) 顶部与底部
+            pg.fillColor = new Color(10, 8, 8, 255);
+            for (let sx = -300; sx <= 300; sx += 32) {
+                pg.roundRect(sx - 8, 134, 16, 12, 2);
+                pg.roundRect(sx - 8, -146, 16, 12, 2);
+            }
+            pg.fill();
+
+            // 胶片微秒时间标尺刻度 (-0.06s ~ +0.06s)
+            pg.strokeColor = new Color(200, 185, 150, 120);
+            pg.lineWidth = 1.0;
+            for (let tx = -260; tx <= 260; tx += 52) {
+                pg.moveTo(tx, 128);
+                pg.lineTo(tx, 116);
+                pg.moveTo(tx, -128);
+                pg.lineTo(tx, -116);
+            }
+            pg.stroke();
+        }
+
+        // 终点激光垂线 (FINISH WIRE: X = 50)
+        const wireLine = new Node("FinishWire");
+        wireLine.layer = photoStrip.layer || Layers.Enum.UI_2D;
+        photoStrip.addChild(wireLine);
+        wireLine.setPosition(50, 0, 0);
+        const wg = wireLine.addComponent(Graphics);
+        wg.strokeColor = new Color(255, 45, 45, 240);
+        wg.lineWidth = 2.4;
+        wg.moveTo(0, -135);
+        wg.lineTo(0, 135);
+        wg.stroke();
+
+        this.text(wireLine, "⚡ FINISH WIRE (0.000s)", 0, 142, 11, WestColors.BANDANA_RED);
+
+        // 胶片左右两端时间读数
+        this.text(photoStrip, "-0.050s", -200, 124, 10, WestColors.TEXT_MUTED);
+        this.text(photoStrip, "+0.050s", 200, 124, 10, WestColors.TEXT_MUTED);
+
+        // 冠军赛马 (Horse 1): 鼻尖贴合终点线 (X = 50)
+        const horse1Card = new Node("Horse1Photo");
+        horse1Card.layer = photoStrip.layer || Layers.Enum.UI_2D;
+        photoStrip.addChild(horse1Card);
+        horse1Card.setPosition(-20, 48, 0);
+        horse1Card.addComponent(UITransform).setContentSize(130, 85);
+        HorseSprites.applyHorseRunningSprite(horse1Card, h1);
+
+        const h1Nose = new Node("H1Nose");
+        h1Nose.layer = photoStrip.layer || Layers.Enum.UI_2D;
+        photoStrip.addChild(h1Nose);
+        h1Nose.setPosition(50, 48, 0);
+        const h1G = h1Nose.addComponent(Graphics);
+        h1G.strokeColor = WestColors.GOLD_BRIGHT;
+        h1G.lineWidth = 1.5;
+        h1G.circle(0, 0, 5);
+        h1G.stroke();
+        this.text(photoStrip, `🥇 冠军 No.${h1} 鼻尖定格`, -30, 92, 12, WestColors.GOLD_BRIGHT);
+
+        // 亚军赛马 (Horse 2): 鼻尖根据 gapSeconds 向后回退
+        const offsetPx = Math.max(16, Math.min(150, gap * 1300));
+        const horse2Card = new Node("Horse2Photo");
+        horse2Card.layer = photoStrip.layer || Layers.Enum.UI_2D;
+        photoStrip.addChild(horse2Card);
+        horse2Card.setPosition(-20 - offsetPx, -48, 0);
+        horse2Card.addComponent(UITransform).setContentSize(130, 85);
+        HorseSprites.applyHorseRunningSprite(horse2Card, h2);
+
+        const h2Nose = new Node("H2Nose");
+        h2Nose.layer = photoStrip.layer || Layers.Enum.UI_2D;
+        photoStrip.addChild(h2Nose);
+        h2Nose.setPosition(50 - offsetPx, -48, 0);
+        const h2G = h2Nose.addComponent(Graphics);
+        h2G.strokeColor = WestColors.BANDANA_RED;
+        h2G.lineWidth = 1.5;
+        h2G.circle(0, 0, 5);
+        h2G.stroke();
+        this.text(photoStrip, `🥈 亚军 No.${h2} 时差: +${gap.toFixed(3)}s`, -20 - offsetPx / 2, -96, 12, WestColors.CHALK_YELLOW);
+
+        // 官方公证金印章 (Official Western Racing Commission Stamp)
+        const sealNode = this.box(photoStrip, 220, -65, 110, 76, new Color(175, 42, 32, 215), 8);
+        const sg = sealNode.getComponent(Graphics);
+        if (sg) {
+            sg.strokeColor = WestColors.GOLD_BRIGHT;
+            sg.lineWidth = 2.0;
+            sg.roundRect(-55, -38, 110, 76, 8);
+            sg.stroke();
+        }
+        this.text(sealNode, "★ OFFICIAL ★", 0, 20, 11, WestColors.GOLD_BRIGHT);
+        this.text(sealNode, "VERIFIED", 0, 4, 13, Color.WHITE);
+        this.text(sealNode, `差 ${gapCm}cm`, 0, -15, 11, WestColors.GOLD_BRIGHT);
+
+        // 裁决数据牛皮纸报告卡
+        const reportCard = this.wantedPosterBox(card, 0, -118, 640, 92, 8);
+        this.text(reportCard, "📋 边境赛马裁判署·终点毫厘微秒速报", 0, 26, 14, WestColors.INK_DARK);
+        this.text(
+            reportCard,
+            `第 ${h1} 号马与第 ${h2} 号马在终点线展开白刃战！\n` +
+            `经千分之一秒高灵敏狭缝扫描测定：冠亚时差仅 ${gap.toFixed(3)} 秒 (鼻尖净差距约 ${gapCm} 厘米)！\n` +
+            `裁判长正式核准裁决生效，赛事成绩已锁定公证。`,
+            0,
+            -13,
+            12,
+            WestColors.INK_MUTED,
+            HorizontalTextAlignment.CENTER
+        );
+
+        // 底部关闭按钮
+        this.westernButton(card, "🔍 确认裁决结果 (CLOSE)", 0, -220, 320, 50, () => {
+            mask.destroy();
+        }, true, 16);
+
+        this.text(card, "🌵 激光狭缝扫描摄影术为 19 世纪末赛马界最权威终点争议仲裁技术 🌵", 0, -295, 11, WestColors.TEXT_MUTED);
     }
 
     /** 每日任务页面（对标 1.png 原型 1004，荒野警长悬赏榜）。 */
@@ -9379,7 +9731,7 @@ export class GameApp extends Component {
                         if (isFoal) {
                             HorseSprites.applyFoalStage(showcaseImgNode, fStage, effectiveHorseNo);
                         } else {
-                            HorseSprites.applyHorseShowcase(showcaseImgNode, effectiveHorseNo);
+                            HorseSprites.applyShowcaseProgressive(showcaseImgNode, effectiveHorseNo);
                         }
                     } else if (this.ranchDisplayMode === "ORTHO_SIDE") {
                         HorseSprites.applyHorseOrthoSide(showcaseImgNode, effectiveHorseNo);

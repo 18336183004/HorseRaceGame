@@ -32,7 +32,6 @@ export class HorseController extends Component {
 
     // 动态策略与超车轨迹系统
     private horseNo = 1;
-    private seed = 0;
     private isQuinellaMode = false;
     private archetype = 0; // 0: 领跑型, 1: 跟跑型, 2: 冲刺型, 3: 缠斗型
     private currentProgress = 0;
@@ -45,20 +44,33 @@ export class HorseController extends Component {
     private lastHoofprintX = -999;
     private isLeftHoof = false;
 
-    // 跑道物理道次索引 [0, 5]
+    // 跑道物理道次索引 [0, 5] 与 2.5D 深度透视缩放
     private laneIndex = -1;
+    private depthScale = 1.0;
+    private isDueling = false;
 
     /** 关联 2D 写实表现组件 */
     public setVisual2D(v: HorseVisual2D | null): void {
         this.visual2D = v;
         if (this.visual2D) {
             this.visual2D.setHorseNo(this.horseNo);
+            this.visual2D.setLaneDepthScale(this.depthScale);
         }
     }
 
-    /** 设置赛马当前分配的跑道物理道次 (0-5) */
+    /** 设置赛马当前分配的跑道物理道次 (0-5)，自动驱动 2.5D 纵深透视缩放 */
     public setLaneIndex(idx: number): void {
         this.laneIndex = idx;
+        // 跑道 6 道从上至下 (0 ~ 5) 实现真实 2.5D 纵深透视缩放 (0.85x ~ 1.15x)
+        this.depthScale = RaceTrack2D.getLaneDepthScale(idx);
+        if (this.visual2D && this.visual2D.isValid) {
+            this.visual2D.setLaneDepthScale(this.depthScale);
+        }
+    }
+
+    /** 设置当前是否与相邻道次战驹陷入激烈并驾齐驱对抗 */
+    public setDueling(dueling: boolean): void {
+        this.isDueling = dueling;
     }
 
     /** 关联 2D 赛道组件以触发物理马蹄飞溅粒子 */
@@ -73,6 +85,19 @@ export class HorseController extends Component {
         this.lastHoofprintX = -999;
     }
 
+    /** 在起跑闸门内等待发令时，随机展现真实马匹小动作（刨地、打响鼻、机警站立） */
+    public setPreRaceIdle(seed: number): void {
+        if (!this.visual2D || !this.visual2D.isValid) return;
+        const roll = Math.abs(seed + this.horseNo * 11) % 3;
+        if (roll === 0) {
+            this.visual2D.setAction("Stand", 1.0);
+        } else if (roll === 1) {
+            this.visual2D.setAction("Paw", 0.9);
+        } else {
+            this.visual2D.setAction("Snort_Alert", 1.0);
+        }
+    }
+
     /** 初始化一匹马的服务端比赛参数与战术策略原型。 */
     public init(
         finishTime: number,
@@ -85,7 +110,6 @@ export class HorseController extends Component {
         this.finishTime = Math.max(0.1, finishTime);
         this.raceStartMs = raceStartMs;
         this.horseNo = horseNo;
-        this.seed = seed;
         this.isQuinellaMode = isQuinellaMode;
         if (this.visual2D && this.visual2D.isValid) {
             this.visual2D.setHorseNo(horseNo);
@@ -104,9 +128,13 @@ export class HorseController extends Component {
     /** 重置到起点，供进入新轮次时复用。 */
     public reset(): void {
         this.running = false;
+        this.isDueling = false;
         this.maxProgressReached = 0;
         this.clearDustTrail();
         this.clearHoofprints();
+        if (this.raceTrack2D && this.raceTrack2D.isValid) {
+            this.raceTrack2D.clearUnifiedHoofprints();
+        }
         if (this.visual2D && this.visual2D.isValid) {
             this.visual2D.setAction("Stand", 1.0);
         }
@@ -140,7 +168,6 @@ export class HorseController extends Component {
 
     /** 在模式切换（WIN <-> QUINELLA）时实时调整战术策略原型与中程轨迹，保持服务端完成时间权威不变 */
     public updateMode(seed: number, isQuinellaMode: boolean, runningStyle?: string): void {
-        this.seed = seed;
         this.isQuinellaMode = isQuinellaMode;
         const parsed = HorseController.parseRunningStyle(runningStyle);
         this.archetype = parsed !== null ? parsed : HorseController.computeArchetype(seed, this.horseNo, isQuinellaMode);
@@ -297,15 +324,15 @@ export class HorseController extends Component {
             const alpha = Math.floor(180 * (1 - age / 3000));
             if (alpha <= 0) continue;
 
-            // 1. 马蹄铁 U 形外凸凹槽 (Horseshoe Arch)
+            // 1. 马蹄铁 U 形外凸凹槽 (Horseshoe Arch，结合 2.5D 深度缩放)
             this.hoofprintsG.strokeColor = new Color(68, 42, 24, alpha);
-            this.hoofprintsG.lineWidth = 1.8;
-            this.hoofprintsG.arc(hp.x, hp.y, 4.2, -Math.PI * 0.7, Math.PI * 0.7, false);
+            this.hoofprintsG.lineWidth = 1.8 * this.depthScale;
+            this.hoofprintsG.arc(hp.x, hp.y, 4.2 * this.depthScale, -Math.PI * 0.7, Math.PI * 0.7, false);
             this.hoofprintsG.stroke();
 
             // 2. 马蹄深压泥土暗色凹陷核心
             this.hoofprintsG.fillColor = new Color(50, 30, 16, Math.floor(alpha * 0.65));
-            this.hoofprintsG.circle(hp.x - 0.8, hp.y, 2.0);
+            this.hoofprintsG.circle(hp.x - 0.8 * this.depthScale, hp.y, 2.0 * this.depthScale);
             this.hoofprintsG.fill();
         }
     }
@@ -328,28 +355,29 @@ export class HorseController extends Component {
             return;
         }
 
-        // 动态扬尘拖尾粒子：随着赛马奔驰加速而变得更加剧烈与浓密
+        // 动态扬尘拖尾粒子：随着赛马奔驰加速而变得更加剧烈与浓密 (按 2.5D 深度缩放)
         const intensity = 0.5 + progress * 0.5;
         const seed = Math.sin(progress * 50);
+        const ds = this.depthScale;
 
         // 粒子 1：靠近马蹄的近景浓缩尘土团
         this.dustGraphics.fillColor = new Color(205, 175, 130, Math.floor(165 * intensity));
-        this.dustGraphics.circle(-6 + seed * 2.5, -2, 5.0 + intensity * 4.0);
+        this.dustGraphics.circle((-6 + seed * 2.5) * ds, -2 * ds, (5.0 + intensity * 4.0) * ds);
         this.dustGraphics.fill();
 
         // 粒子 2：中景飞扬翻滚沙粒
         this.dustGraphics.fillColor = new Color(225, 195, 150, Math.floor(110 * intensity));
-        this.dustGraphics.circle(-16 - seed * 2.2, 2 + seed * 1.5, 7.5 + intensity * 5.0);
+        this.dustGraphics.circle((-16 - seed * 2.2) * ds, (2 + seed * 1.5) * ds, (7.5 + intensity * 5.0) * ds);
         this.dustGraphics.fill();
 
         // 粒子 3：上浮消散的轻盈尘土云
         this.dustGraphics.fillColor = new Color(235, 215, 175, Math.floor(65 * intensity));
-        this.dustGraphics.circle(-28 + seed * 3.5, 5 + seed * 2.0, 9.5 + intensity * 6.0);
+        this.dustGraphics.circle((-28 + seed * 3.5) * ds, (5 + seed * 2.0) * ds, (9.5 + intensity * 6.0) * ds);
         this.dustGraphics.fill();
 
         // 粒子 4：尾部随风飘散微弱尘雾
         this.dustGraphics.fillColor = new Color(245, 230, 195, Math.floor(35 * intensity));
-        this.dustGraphics.circle(-42 - seed * 2.0, 7, 12.0 + intensity * 6.5);
+        this.dustGraphics.circle((-42 - seed * 2.0) * ds, 7 * ds, (12.0 + intensity * 6.5) * ds);
         this.dustGraphics.fill();
     }
 
@@ -366,12 +394,24 @@ export class HorseController extends Component {
         visual.setPosition(posX, 0, 0);
         this.updateDustTrail(progress);
 
-        // 联动 2D 写实表现组件动作状态机
+        // 联动 2D 写实表现组件动作状态机（融合跑法战术原型与对抗状态）
         if (this.running && this.visual2D && this.visual2D.isValid) {
-            if (progress >= 0.70 || this.archetype === 2 && progress >= 0.55) {
-                this.visual2D.setAction("Sprint", 1.4);
+            if (progress >= 0.97) {
+                // 临近冲线压线最后一跃：前伸鼻尖全力撞线
+                this.visual2D.setAction("Finish", 1.35);
+            } else if (this.isDueling && progress > 0.15 && progress < 0.97) {
+                // 两马并驾齐驱并线死斗
+                this.visual2D.setAction("Head_To_Head", 1.35);
+            } else if (progress >= 0.70 || (this.archetype === 2 && progress >= 0.58)) {
+                // 直道冲刺阶段：后发追击型或决战直道全力超频
+                const sprintSpeed = this.archetype === 2 ? 1.5 : 1.35;
+                this.visual2D.setAction("Sprint", sprintSpeed);
+            } else if (this.archetype === 0 && progress < 0.32) {
+                // 领跑先锋型出闸前程狂飙爆发
+                this.visual2D.setAction("Sprint", 1.25);
             } else if (progress > 0.05) {
-                this.visual2D.setAction("Accelerate", 1.0);
+                const paceSpeed = (this.archetype === 1 && progress > 0.45) ? 1.15 : 1.0;
+                this.visual2D.setAction("Accelerate", paceSpeed);
             }
         }
 
@@ -379,22 +419,39 @@ export class HorseController extends Component {
         if (this.running && progress > 0.02 && progress < 0.98) {
             if (posX - this.lastHoofprintX >= 24) {
                 this.isLeftHoof = !this.isLeftHoof;
-                const hpY = this.isLeftHoof ? -5 : 5;
-                this.hoofprints.push({
-                    x: posX - 14,
-                    y: hpY,
-                    createdAt: nowMs !== undefined ? nowMs : Date.now(),
-                    isLeft: this.isLeftHoof,
-                });
-                this.lastHoofprintX = posX;
+                const hpY = (this.isLeftHoof ? -5 : 5) * this.depthScale;
+                const hpX = posX - 14;
+                const hpTime = nowMs !== undefined ? nowMs : Date.now();
 
-                // 同步在赛道地表爆发物理马蹄飞溅粒子
+                // 优先交由 RaceTrack2D 单图元合批池统一渲染 (极大降低 6 匹马产生的 DrawCall)
                 if (this.raceTrack2D && this.raceTrack2D.isValid) {
                     const lIdx = this.laneIndex >= 0 ? this.laneIndex : (this.horseNo - 1) % 6;
-                    const laneY = 135 - (lIdx + 1) * 41;
-                    this.raceTrack2D.emitHoofImpact(posX - 14, laneY + hpY, progress >= 0.7 ? 1.4 : 1.0);
+                    const laneY = RaceTrack2D.getLaneY(lIdx);
+                    this.raceTrack2D.addUnifiedHoofprint(hpX, laneY + hpY, hpTime, this.depthScale);
+                    this.raceTrack2D.emitHoofImpact(hpX, laneY + hpY, progress >= 0.7 ? 1.8 : 1.0, this.depthScale);
+                } else {
+                    this.hoofprints.push({
+                        x: hpX,
+                        y: hpY,
+                        createdAt: hpTime,
+                        isLeft: this.isLeftHoof,
+                    });
                 }
+                this.lastHoofprintX = posX;
             }
         }
+    }
+
+    protected onDestroy(): void {
+        this.clearDustTrail();
+        this.clearHoofprints();
+        if (this.dustTrailNode && this.dustTrailNode.isValid) {
+            this.dustTrailNode.destroy();
+            this.dustTrailNode = null;
+            this.dustGraphics = null;
+        }
+        this.visual2D = null;
+        this.raceTrack2D = null;
+        this.hoofprintsG = null;
     }
 }

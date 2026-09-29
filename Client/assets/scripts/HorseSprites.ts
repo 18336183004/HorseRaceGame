@@ -6,7 +6,7 @@
  */
 
 import { ImageAsset, Sprite, SpriteFrame, Texture2D, Node, assetManager, Rect, Size } from "cc";
-import { HorseAssetRegistry, HorseProfile, FoalGrowthStage } from "./HorseAssetRegistry";
+import { HorseAssetRegistry } from "./HorseAssetRegistry";
 import { ClientConfig } from "./ClientConfig";
 
 export interface HorseSpriteItem {
@@ -180,22 +180,34 @@ export class HorseSprites {
             return;
         }
 
-        // 2. 规范化静态文件路径
+        // 2. 规范化静态文件路径与 WebP 优先级探测
         let cleanPath = pathOrUri;
-        if (!cleanPath.endsWith(".png") && !cleanPath.endsWith(".jpg") && !cleanPath.endsWith(".jpeg")) {
+        if (!cleanPath.endsWith(".png") && !cleanPath.endsWith(".jpg") && !cleanPath.endsWith(".jpeg") && !cleanPath.endsWith(".webp")) {
             cleanPath += ".png";
         }
 
         const apiBase = (ClientConfig.apiBaseUrl || "http://localhost:55230").replace(/\/$/, "");
         const rawRelative = cleanPath.replace(/^\.?\//, "");
-        const candidates = [
+        const isWebp = cleanPath.endsWith(".webp");
+        const cleanWebp = isWebp ? cleanPath : cleanPath.replace(/\.(png|jpg|jpeg)$/i, ".webp");
+        const webpRelative = isWebp ? rawRelative : rawRelative.replace(/\.(png|jpg|jpeg)$/i, ".webp");
+
+        // 优先尝试现代高压缩比 WebP 格式（缩减 60-70% 纹理体积与显存占用），若资源未转码则优雅回退至原始 PNG/JPG
+        const candidates: string[] = [];
+        if (!isWebp) {
+            candidates.push(`${apiBase}/${webpRelative}`);
+            candidates.push(`${apiBase}/assets/${webpRelative}`);
+            candidates.push(cleanWebp);
+            candidates.push(`assets/${cleanWebp}`);
+        }
+        candidates.push(
             `${apiBase}/${rawRelative}`,
             `${apiBase}/assets/${rawRelative}`,
             cleanPath,
             `assets/${cleanPath}`,
             `./${cleanPath}`,
-            `./assets/${cleanPath}`,
-        ];
+            `./assets/${cleanPath}`
+        );
 
         this.tryLoadCandidates(targetNode, pathOrUri, candidates, 0, onLoaded);
     }
@@ -225,10 +237,12 @@ export class HorseSprites {
         }
 
         const curUrl = candidates[index];
+        const extMatch = curUrl.match(/\.(png|jpg|jpeg|webp)(\?.*)?$/i);
+        const ext = extMatch ? `.${extMatch[1].toLowerCase()}` : ".png";
 
         // 优先使用 Cocos assetManager.loadRemote
         if (typeof assetManager !== "undefined" && assetManager && assetManager.loadRemote) {
-            assetManager.loadRemote<ImageAsset>(curUrl, { ext: ".png" }, (err, imageAsset) => {
+            assetManager.loadRemote<ImageAsset>(curUrl, { ext }, (err, imageAsset) => {
                 if (!err && imageAsset && imageAsset.isValid) {
                     if (!targetNode || !targetNode.isValid) return;
                     const texture = new Texture2D();
@@ -350,6 +364,70 @@ export class HorseSprites {
     ): void {
         const item = this.getHorseItem(horseNo);
         this.applyImage(targetNode, item.showcaseUri, onLoaded);
+    }
+
+    /**
+     * 渐进式 LOD 加载名驹油画艺术展示图：
+     * 1. 优先使用已缓存小尺寸奔跑精灵 (Sprite) 秒级占位，彻底消除弹窗白屏/黑屏等待
+     * 2. 异步在后台拉取完整高精油画 Showcase (或 WebP)，加载完毕后无缝渐变切换
+     */
+    public static applyShowcaseProgressive(
+        targetNode: Node,
+        horseNo: number,
+        onThumbLoaded?: (sf: SpriteFrame) => void,
+        onFullLoaded?: (sf: SpriteFrame) => void
+    ): void {
+        if (!targetNode || !targetNode.isValid) return;
+        const item = this.getHorseItem(horseNo);
+
+        // 如果高清图早已缓存在内存中，直接渲染
+        const cachedFull = this.cacheGet(item.showcaseUri);
+        if (cachedFull && cachedFull.isValid) {
+            const sp = targetNode.getComponent(Sprite) || targetNode.addComponent(Sprite);
+            sp.spriteFrame = cachedFull;
+            if (onFullLoaded) onFullLoaded(cachedFull);
+            return;
+        }
+
+        // 步骤 1: 立即使用已有或小尺寸奔跑图作为占位 (Placeholder)
+        const cachedThumb = this.cacheGet(item.spriteUri);
+        if (cachedThumb && cachedThumb.isValid) {
+            const sp = targetNode.getComponent(Sprite) || targetNode.addComponent(Sprite);
+            sp.spriteFrame = cachedThumb;
+            if (onThumbLoaded) onThumbLoaded(cachedThumb);
+        } else {
+            this.applyImage(targetNode, item.spriteUri, (sf) => {
+                if (sf && onThumbLoaded) onThumbLoaded(sf);
+            });
+        }
+
+        // 步骤 2: 异步加载高精 Showcase 大图，加载完成后无缝替换
+        this.applyImage(targetNode, item.showcaseUri, (fullSf) => {
+            if (fullSf && targetNode.isValid) {
+                const sp = targetNode.getComponent(Sprite) || targetNode.addComponent(Sprite);
+                sp.spriteFrame = fullSf;
+                if (onFullLoaded) onFullLoaded(fullSf);
+            }
+        });
+    }
+
+    /**
+     * 针对本局出战的 6 匹马执行资产批量预热与显存预热
+     * 在倒计时阶段完成 8 帧袭步图集、彩衣、及 2D 精灵解码，消除开跑第一秒的掉帧与卡顿
+     */
+    public static preloadRaceBatch(horseNos: number[]): void {
+        if (!horseNos || horseNos.length === 0) return;
+        const uniqueNos = Array.from(new Set(horseNos)).filter((no) => no >= 1 && no <= 20);
+        for (const no of uniqueNos) {
+            // 预热 8 帧奔跑图集与骑师图集
+            this.loadHorseGallopAnimation(no, () => {});
+            // 预热 2D 跑道精灵
+            const item = this.getHorseItem(no);
+            const dummy = new Node(`Prewarm_${no}`);
+            this.applyImage(dummy, item.spriteUri, () => {
+                if (dummy.isValid) dummy.destroy();
+            });
+        }
     }
 
     /** 为指定马号 (1-20) 绑定解剖三视图大图 (全景) */
