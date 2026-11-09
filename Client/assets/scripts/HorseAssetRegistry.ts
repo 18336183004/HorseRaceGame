@@ -5,16 +5,24 @@
 
 export interface HorseProfile {
     id: string;             // 唯一编码，如 H01, H02
-    horseNo: number;        // 赛道马号 (1-12)
+    horseNo: number;        // 赛道马号 (1-20)
     nameZh: string;         // 中文名称
     nameEn: string;         // 英文代号
     coatColor: string;      // 毛色 (Chestnut, Bay, Dapple Grey...)
     breed: string;          // 历史原型血统 (18-20世纪纯血马 Thoroughbred)
     descriptionZh: string;  // 解剖学与体态特性描述
     showcaseUrl: string;    // 2D 油画展示图路径
-    orthoUrl: string;       // 解剖三视图 (正/侧/背) 路径
+    orthoUrl: string;       // 解剖三视图综合工程图 (Ortho Sheet)
+    sideUrl: string;        // 解剖侧立面大图
+    frontUrl: string;       // 解剖正前立面大图
+    backUrl: string;        // 解剖正后立面大图
+    spriteUrl: string;      // 跑道透明精灵图
     runningStyle: string;   // 推荐跑法 (Front-Runner, Stalker, Closer, Battler)
+    heightHh: string;       // 鬐甲肩高 (Hands High, 如 16.2 HH)
+    weightKg: string;       // 比赛成年平均体重 (kg)
 }
+
+export type HorseInfo = HorseProfile;
 
 export enum FoalGrowthStage {
     Foal = 1,               // 幼驹期 (0~6个月)
@@ -44,7 +52,7 @@ export interface HorseActionMeta {
 }
 
 export class HorseAssetRegistry {
-    /** 12 匹核心名驹权威档案矩阵 */
+    /** 20 匹核心名驹权威档案矩阵 */
     public static readonly HORSES: HorseProfile[] = [
         {
             id: "H01",
@@ -56,7 +64,13 @@ export class HorseAssetRegistry {
             descriptionZh: "19世纪古典赛马代表。深栗毛赤红光泽，额前有细长流星白斑，鬐甲高耸，胸廓深窄，后躯半腱肌饱满，具备顶级爆发力。",
             showcaseUrl: "textures/horses/H01_CrimsonMeteor_Showcase",
             orthoUrl: "textures/horses/H01_CrimsonMeteor_Ortho",
-            runningStyle: "CLOSER"
+            sideUrl: "textures/horses/H01_CrimsonMeteor_Ortho_Side",
+            frontUrl: "textures/horses/H01_CrimsonMeteor_Ortho_Front",
+            backUrl: "textures/horses/H01_CrimsonMeteor_Ortho_Back",
+            spriteUrl: "textures/horses/H01_CrimsonMeteor_Sprite",
+            runningStyle: "CLOSER",
+            heightHh: "16.2",
+            weightKg: "495"
         },
         {
             id: "H02",
@@ -68,7 +82,13 @@ export class HorseAssetRegistry {
             descriptionZh: "银白青斑相间，体态修长轻巧，头小颈弓优美，四肢关节纤细而韧性极佳，中长途耐力出众。",
             showcaseUrl: "textures/horses/H02_EmeraldWind_Showcase",
             orthoUrl: "textures/horses/H02_EmeraldWind_Ortho",
-            runningStyle: "STALKER"
+            sideUrl: "textures/horses/H02_EmeraldWind_Ortho_Side",
+            frontUrl: "textures/horses/H02_EmeraldWind_Ortho_Front",
+            backUrl: "textures/horses/H02_EmeraldWind_Ortho_Back",
+            spriteUrl: "textures/horses/H02_EmeraldWind_Sprite",
+            runningStyle: "STALKER",
+            heightHh: "16.1",
+            weightKg: "480"
         },
         {
             id: "H03",
@@ -80,7 +100,13 @@ export class HorseAssetRegistry {
             descriptionZh: "金黄缎光被毛与纯白长鬃，背腰短而强韧，十字部肌肉隆起呈拉丝状，前胸宽厚。",
             showcaseUrl: "textures/horses/H03_GoldenArrow_Showcase",
             orthoUrl: "textures/horses/H03_GoldenArrow_Ortho",
-            runningStyle: "FRONT_RUNNER"
+            sideUrl: "textures/horses/H03_GoldenArrow_Ortho_Side",
+            frontUrl: "textures/horses/H03_GoldenArrow_Ortho_Front",
+            backUrl: "textures/horses/H03_GoldenArrow_Ortho_Back",
+            spriteUrl: "textures/horses/H03_GoldenArrow_Sprite",
+            runningStyle: "FRONT_RUNNER",
+            heightHh: "16.0",
+            weightKg: "505"
         },
         {
             id: "H04",
@@ -92,7 +118,13 @@ export class HorseAssetRegistry {
             descriptionZh: "通体乌黑无杂毛，眼神冷峻，肩胛倾角45度，步幅极大，后肢股二头肌如钢铁磐石。",
             showcaseUrl: "textures/horses/H04_ShadowHunter_Showcase",
             orthoUrl: "textures/horses/H04_ShadowHunter_Ortho",
-            runningStyle: "BATTLER"
+            sideUrl: "textures/horses/H04_ShadowHunter_Ortho_Side",
+            frontUrl: "textures/horses/H04_ShadowHunter_Ortho_Front",
+            backUrl: "textures/horses/H04_ShadowHunter_Ortho_Back",
+            spriteUrl: "textures/horses/H04_ShadowHunter_Sprite",
+            runningStyle: "BATTLER",
+            heightHh: "16.3",
+            weightKg: "520"
         },
         {
             id: "H05",
@@ -104,7 +136,13 @@ export class HorseAssetRegistry {
             descriptionZh: "宛如银白色月光，颈脊弧线挺拔，动作轻灵若御风而行，在泥地与雨战中步伐格外稳健。",
             showcaseUrl: "textures/horses/H05_SilverMoon_Showcase",
             orthoUrl: "textures/horses/H05_SilverMoon_Ortho",
-            runningStyle: "STALKER"
+            sideUrl: "textures/horses/H05_SilverMoon_Ortho_Side",
+            frontUrl: "textures/horses/H05_SilverMoon_Ortho_Front",
+            backUrl: "textures/horses/H05_SilverMoon_Ortho_Back",
+            spriteUrl: "textures/horses/H05_SilverMoon_Sprite",
+            runningStyle: "STALKER",
+            heightHh: "15.3",
+            weightKg: "475"
         },
         {
             id: "H06",
@@ -113,10 +151,16 @@ export class HorseAssetRegistry {
             nameEn: "Blue Tide",
             coatColor: "石板蓝灰沙毛 (Blue Roan)",
             breed: "大胸廓全天候赛马 (All-weather Power Horse)",
-            descriptionZh: "头黑身呈深蓝灰色，胸围（Girth）深广，心肺容积巨大，推进力强劲，不畏强风与长直道。",
+            descriptionZh: "头黑身呈深蓝灰色，胸围深广，心肺容积巨大，推进力强劲，不畏强风与长直道。",
             showcaseUrl: "textures/horses/H06_BlueTide_Showcase",
             orthoUrl: "textures/horses/H06_BlueTide_Ortho",
-            runningStyle: "BATTLER"
+            sideUrl: "textures/horses/H06_BlueTide_Ortho_Side",
+            frontUrl: "textures/horses/H06_BlueTide_Ortho_Front",
+            backUrl: "textures/horses/H06_BlueTide_Ortho_Back",
+            spriteUrl: "textures/horses/H06_BlueTide_Sprite",
+            runningStyle: "BATTLER",
+            heightHh: "16.2",
+            weightKg: "510"
         },
         {
             id: "H07",
@@ -128,7 +172,13 @@ export class HorseAssetRegistry {
             descriptionZh: "耳短直立转动极其敏锐，腹线紧收，四蹄黑亮硬如坚石，起跑瞬间步频极快。",
             showcaseUrl: "textures/horses/H07_PurpleLightning_Showcase",
             orthoUrl: "textures/horses/H07_PurpleLightning_Ortho",
-            runningStyle: "FRONT_RUNNER"
+            sideUrl: "textures/horses/H07_PurpleLightning_Ortho_Side",
+            frontUrl: "textures/horses/H07_PurpleLightning_Ortho_Front",
+            backUrl: "textures/horses/H07_PurpleLightning_Ortho_Back",
+            spriteUrl: "textures/horses/H07_PurpleLightning_Sprite",
+            runningStyle: "FRONT_RUNNER",
+            heightHh: "15.3",
+            weightKg: "470"
         },
         {
             id: "H08",
@@ -136,23 +186,35 @@ export class HorseAssetRegistry {
             nameZh: "暴风疾行",
             nameEn: "Storm Run",
             coatColor: "经典骝毛四蹄白 (Classic Bay)",
-            breed: "骨量充沛型耐劳赛马 (Dense Bone Endurance)",
+            breed: "骨量充沛型耐劳赛马 (Dense-Bone Endurance Horse)",
             descriptionZh: "四蹄踏雪，红棕身躯配黑鬃黑尾，膝与飞节粗大，在重赛道及逆风战况中耐疲劳表现卓越。",
             showcaseUrl: "textures/horses/H08_StormRun_Showcase",
             orthoUrl: "textures/horses/H08_StormRun_Ortho",
-            runningStyle: "BATTLER"
+            sideUrl: "textures/horses/H08_StormRun_Ortho_Side",
+            frontUrl: "textures/horses/H08_StormRun_Ortho_Front",
+            backUrl: "textures/horses/H08_StormRun_Ortho_Back",
+            spriteUrl: "textures/horses/H08_StormRun_Sprite",
+            runningStyle: "BATTLER",
+            heightHh: "16.2",
+            weightKg: "515"
         },
         {
             id: "H09",
             horseNo: 9,
             nameZh: "惊雷破空",
             nameEn: "Thunder Break",
-            coatColor: "黑骝色白星章 (Dark Brown/Bay)",
-            breed: "突击型大步幅赛马 (Long-stride Sprinter)",
+            coatColor: "黑骝色白星章 (Dark Brown / Bay)",
+            breed: "突击型大步幅赛马 (Long-Stride Sprinter)",
             descriptionZh: "肩峰高耸，前胸胸肌双峰突出，出闸箱起步凶猛，直道冲刺如惊雷划空。",
             showcaseUrl: "textures/horses/H09_ThunderBreak_Showcase",
             orthoUrl: "textures/horses/H09_ThunderBreak_Ortho",
-            runningStyle: "CLOSER"
+            sideUrl: "textures/horses/H09_ThunderBreak_Ortho_Side",
+            frontUrl: "textures/horses/H09_ThunderBreak_Ortho_Front",
+            backUrl: "textures/horses/H09_ThunderBreak_Ortho_Back",
+            spriteUrl: "textures/horses/H09_ThunderBreak_Sprite",
+            runningStyle: "CLOSER",
+            heightHh: "16.1",
+            weightKg: "500"
         },
         {
             id: "H10",
@@ -164,7 +226,13 @@ export class HorseAssetRegistry {
             descriptionZh: "骨架宏伟，颈部呈拱形雄驹弧线，臀部圆硕厚重，并驾齐驱时能施加极大竞争压迫感。",
             showcaseUrl: "textures/horses/H10_SunWarrior_Showcase",
             orthoUrl: "textures/horses/H10_SunWarrior_Ortho",
-            runningStyle: "FRONT_RUNNER"
+            sideUrl: "textures/horses/H10_SunWarrior_Ortho_Side",
+            frontUrl: "textures/horses/H10_SunWarrior_Ortho_Front",
+            backUrl: "textures/horses/H10_SunWarrior_Ortho_Back",
+            spriteUrl: "textures/horses/H10_SunWarrior_Sprite",
+            runningStyle: "FRONT_RUNNER",
+            heightHh: "16.3",
+            weightKg: "525"
         },
         {
             id: "H11",
@@ -176,7 +244,13 @@ export class HorseAssetRegistry {
             descriptionZh: "毛色奇特雅致，后躯飞节动作如钟摆般平稳丝滑，擅长在赛程后半段自外侧悄然逆转。",
             showcaseUrl: "textures/horses/H11_JadeDream_Showcase",
             orthoUrl: "textures/horses/H11_JadeDream_Ortho",
-            runningStyle: "CLOSER"
+            sideUrl: "textures/horses/H11_JadeDream_Ortho_Side",
+            frontUrl: "textures/horses/H11_JadeDream_Ortho_Front",
+            backUrl: "textures/horses/H11_JadeDream_Ortho_Back",
+            spriteUrl: "textures/horses/H11_JadeDream_Sprite",
+            runningStyle: "CLOSER",
+            heightHh: "15.3",
+            weightKg: "468"
         },
         {
             id: "H12",
@@ -184,11 +258,17 @@ export class HorseAssetRegistry {
             nameZh: "极光之星",
             nameEn: "Aurora Star",
             coatColor: "深褐配菱形星斑 (Star-Marked Dark Bay)",
-            breed: "全能型现代纯血祖系 (All-around Thoroughbred)",
+            breed: "全能型现代纯血祖系 (All-Round Modern Thoroughbred)",
             descriptionZh: "头身比例1:6，重心平衡极高，贴栏走内道转弯能力冠绝群马，各项赛程兼修。",
             showcaseUrl: "textures/horses/H12_AuroraStar_Showcase",
             orthoUrl: "textures/horses/H12_AuroraStar_Ortho",
-            runningStyle: "STALKER"
+            sideUrl: "textures/horses/H12_AuroraStar_Ortho_Side",
+            frontUrl: "textures/horses/H12_AuroraStar_Ortho_Front",
+            backUrl: "textures/horses/H12_AuroraStar_Ortho_Back",
+            spriteUrl: "textures/horses/H12_AuroraStar_Sprite",
+            runningStyle: "STALKER",
+            heightHh: "16.0",
+            weightKg: "490"
         },
         {
             id: "H13",
@@ -196,11 +276,17 @@ export class HorseAssetRegistry {
             nameZh: "天火之翼",
             nameEn: "Sky Fire Wing",
             coatColor: "琥珀栗毛 (Amber Chestnut)",
-            breed: "山地短途冲刺纯血 (Mountain Sprinter Thoroughbred)",
+            breed: "山地短途冲刺纯血 (Mountain Sprinter)",
             descriptionZh: "落基山脉边缘培育的顶级纯血，琥珀色栗毛在晴日下泛金光，晴朗硬质泥地上具备统治级冲刺极速。",
             showcaseUrl: "textures/horses/H13_SkyFire_Showcase",
             orthoUrl: "textures/horses/H13_SkyFire_Ortho",
-            runningStyle: "FRONT_RUNNER"
+            sideUrl: "textures/horses/H13_SkyFire_Ortho_Side",
+            frontUrl: "textures/horses/H13_SkyFire_Ortho_Front",
+            backUrl: "textures/horses/H13_SkyFire_Ortho_Back",
+            spriteUrl: "textures/horses/H13_SkyFire_Sprite",
+            runningStyle: "FRONT_RUNNER",
+            heightHh: "16.0",
+            weightKg: "488"
         },
         {
             id: "H14",
@@ -212,7 +298,13 @@ export class HorseAssetRegistry {
             descriptionZh: "纯正旷野野马血统，栗毛粗粝带晒痕，心肺容量惊人，末程400米拉锯战胜率第一。",
             showcaseUrl: "textures/horses/H14_PlainsOverlord_Showcase",
             orthoUrl: "textures/horses/H14_PlainsOverlord_Ortho",
-            runningStyle: "BATTLER"
+            sideUrl: "textures/horses/H14_PlainsOverlord_Ortho_Side",
+            frontUrl: "textures/horses/H14_PlainsOverlord_Ortho_Front",
+            backUrl: "textures/horses/H14_PlainsOverlord_Ortho_Back",
+            spriteUrl: "textures/horses/H14_PlainsOverlord_Sprite",
+            runningStyle: "BATTLER",
+            heightHh: "16.1",
+            weightKg: "502"
         },
         {
             id: "H15",
@@ -220,11 +312,17 @@ export class HorseAssetRegistry {
             nameZh: "白银之光",
             nameEn: "Silver Beam",
             coatColor: "铂银亮毛 (Platinum Silver)",
-            breed: "贵族中距追袭纯血 (Aristocratic Middle-Distance Stalker)",
+            breed: "贵族中距追袭纯血 (Aristocratic Stalker)",
             descriptionZh: "银白色鬃毛飞扬，擅长中后段借风滑行，最后弯道切内线突围能力拔群。",
             showcaseUrl: "textures/horses/H15_SilverBeam_Showcase",
             orthoUrl: "textures/horses/H15_SilverBeam_Ortho",
-            runningStyle: "STALKER"
+            sideUrl: "textures/horses/H15_SilverBeam_Ortho_Side",
+            frontUrl: "textures/horses/H15_SilverBeam_Ortho_Front",
+            backUrl: "textures/horses/H15_SilverBeam_Ortho_Back",
+            spriteUrl: "textures/horses/H15_SilverBeam_Sprite",
+            runningStyle: "STALKER",
+            heightHh: "16.2",
+            weightKg: "492"
         },
         {
             id: "H16",
@@ -236,7 +334,13 @@ export class HorseAssetRegistry {
             descriptionZh: "肌肉密度极高，炭黑被毛如黑曜石，强劲的后肢蹬踏力使其在烂泥湿地赛道如履平地。",
             showcaseUrl: "textures/horses/H16_ObsidianStorm_Showcase",
             orthoUrl: "textures/horses/H16_ObsidianStorm_Ortho",
-            runningStyle: "BATTLER"
+            sideUrl: "textures/horses/H16_ObsidianStorm_Ortho_Side",
+            frontUrl: "textures/horses/H16_ObsidianStorm_Ortho_Front",
+            backUrl: "textures/horses/H16_ObsidianStorm_Ortho_Back",
+            spriteUrl: "textures/horses/H16_ObsidianStorm_Sprite",
+            runningStyle: "BATTLER",
+            heightHh: "16.3",
+            weightKg: "530"
         },
         {
             id: "H17",
@@ -248,7 +352,13 @@ export class HorseAssetRegistry {
             descriptionZh: "性格沉稳冷静，多马并驾齐驱时心率毫不紊乱，擅长狭窄空隙钻击。",
             showcaseUrl: "textures/horses/H17_MoonWalker_Showcase",
             orthoUrl: "textures/horses/H17_MoonWalker_Ortho",
-            runningStyle: "BATTLER"
+            sideUrl: "textures/horses/H17_MoonWalker_Ortho_Side",
+            frontUrl: "textures/horses/H17_MoonWalker_Ortho_Front",
+            backUrl: "textures/horses/H17_MoonWalker_Ortho_Back",
+            spriteUrl: "textures/horses/H17_MoonWalker_Sprite",
+            runningStyle: "BATTLER",
+            heightHh: "16.0",
+            weightKg: "485"
         },
         {
             id: "H18",
@@ -260,7 +370,13 @@ export class HorseAssetRegistry {
             descriptionZh: "步幅宽大凶悍，古铜色暗骝毛在阳光下泛金属光泽，一旦起跑占据领放领地便极难被反超。",
             showcaseUrl: "textures/horses/H18_RagingHorn_Showcase",
             orthoUrl: "textures/horses/H18_RagingHorn_Ortho",
-            runningStyle: "FRONT_RUNNER"
+            sideUrl: "textures/horses/H18_RagingHorn_Ortho_Side",
+            frontUrl: "textures/horses/H18_RagingHorn_Ortho_Front",
+            backUrl: "textures/horses/H18_RagingHorn_Ortho_Back",
+            spriteUrl: "textures/horses/H18_RagingHorn_Sprite",
+            runningStyle: "FRONT_RUNNER",
+            heightHh: "16.2",
+            weightKg: "512"
         },
         {
             id: "H19",
@@ -272,7 +388,13 @@ export class HorseAssetRegistry {
             descriptionZh: "黄金血统纯血名宿，鎏金栗毛配金色飞鬃，在各类赛道均能保持稳定胜率。",
             showcaseUrl: "textures/horses/H19_GoldenEagle_Showcase",
             orthoUrl: "textures/horses/H19_GoldenEagle_Ortho",
-            runningStyle: "CLOSER"
+            sideUrl: "textures/horses/H19_GoldenEagle_Ortho_Side",
+            frontUrl: "textures/horses/H19_GoldenEagle_Ortho_Front",
+            backUrl: "textures/horses/H19_GoldenEagle_Ortho_Back",
+            spriteUrl: "textures/horses/H19_GoldenEagle_Sprite",
+            runningStyle: "CLOSER",
+            heightHh: "16.1",
+            weightKg: "498"
         },
         {
             id: "H20",
@@ -284,7 +406,13 @@ export class HorseAssetRegistry {
             descriptionZh: "低调内敛但杀伤力巨大，靛蓝玄黑被毛在暗处近乎隐形，常在落后两马位的死局中上演绝杀。",
             showcaseUrl: "textures/horses/H20_AbyssalPhantom_Showcase",
             orthoUrl: "textures/horses/H20_AbyssalPhantom_Ortho",
-            runningStyle: "STALKER"
+            sideUrl: "textures/horses/H20_AbyssalPhantom_Ortho_Side",
+            frontUrl: "textures/horses/H20_AbyssalPhantom_Ortho_Front",
+            backUrl: "textures/horses/H20_AbyssalPhantom_Ortho_Back",
+            spriteUrl: "textures/horses/H20_AbyssalPhantom_Sprite",
+            runningStyle: "STALKER",
+            heightHh: "16.2",
+            weightKg: "508"
         }
     ];
 
@@ -301,28 +429,28 @@ export class HorseAssetRegistry {
         },
         {
             stage: FoalGrowthStage.Yearling,
-            nameZh: "青年期",
+            nameZh: "周岁青年期",
             nameEn: "Yearling",
             ageDesc: "约 1~2 岁",
-            anatomicalTrait: "尴尬发育期（Awkward Stage）。臀高比肩鬐高 2~5cm，骨架纵向拉伸，褪去胎毛换出光泽短毛，步态轻快富有弹跳力。",
+            anatomicalTrait: "骨架拉长，四肢关节收紧，胸腹开始形成肌肉轮廓，鬃尾换毛初现光泽，步态轻盈活泼。",
             showcaseUrl: "textures/foals/F01_WildBreeze_Stage2_Yearling",
             orthoUrl: "textures/foals/F01_WildBreeze_Stage2_Yearling"
         },
         {
             stage: FoalGrowthStage.Adult,
-            nameZh: "成年期",
+            nameZh: "壮年成熟期",
             nameEn: "Adult",
             ageDesc: "约 3~5 岁",
-            anatomicalTrait: "成熟黄金比例。肩鬐与臀部齐平（标准正方形身材），胸廓宽深，骨骼完全闭合，胸肌臀肌分块饱满，进入最佳配种与体态期。",
+            anatomicalTrait: "体格定型，肌肉丰满，胸深腰短，关节坚实，性情沉稳机警，进入赛道服役黄金年龄。",
             showcaseUrl: "textures/foals/F01_WildBreeze_Stage3_Adult",
             orthoUrl: "textures/foals/F01_WildBreeze_Stage3_Adult"
         },
         {
             stage: FoalGrowthStage.RacingPro,
-            nameZh: "职业赛马",
-            nameEn: "Racehorse",
-            ageDesc: "约 5 岁以上",
-            anatomicalTrait: "体脂低于8%，肌肉紧绷拉丝，皮下腹壁静脉隐现。佩戴专业竞技超轻马鞍、号码布与护腿绑带，具备强烈竞技压迫感。",
+            nameZh: "职业赛马期",
+            nameEn: "Racing Pro",
+            ageDesc: "5 岁以上",
+            anatomicalTrait: "披挂全套赛鞍与缰绳护具，后躯蹬踏肌群拉丝如钢铁，身经百战，自带冠军气场。",
             showcaseUrl: "textures/foals/F01_WildBreeze_Stage4_Pro",
             orthoUrl: "textures/foals/F01_WildBreeze_Stage4_Pro"
         }
@@ -383,7 +511,7 @@ export class HorseAssetRegistry {
         { actionId: "ACT_44", nameZh: "受惊", nameEn: "Spook", category: "Racing", durationSec: 0.5, isLoop: false, description: "突然受惊急停侧闪" }
     ];
 
-    /** 根据马号 (1-12) 获取名驹信息 */
+    /** 根据马号 (1-20) 获取名驹信息 */
     public static getHorseByNo(horseNo: number): HorseProfile {
         const idx = Math.max(0, Math.min(this.HORSES.length - 1, (horseNo - 1) % this.HORSES.length));
         return this.HORSES[idx];

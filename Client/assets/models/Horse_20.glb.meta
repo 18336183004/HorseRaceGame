@@ -1,0 +1,93 @@
+{
+  "ver": "2.3.14",
+  "importer": "gltf",
+  "imported": true,
+  "uuid": "39013109-ac27-4716-b6be-f2cedf9e0fae",
+  "files": [],
+  "subMetas": {
+    "0f86f": {
+      "importer": "gltf-mesh",
+      "uuid": "39013109-ac27-4716-b6be-f2cedf9e0fae@0f86f",
+      "displayName": "",
+      "id": "0f86f",
+      "name": "Horse_20_Mesh.mesh",
+      "userData": {
+        "gltfIndex": 0,
+        "triangleCount": 276
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "a728a": {
+      "importer": "gltf-material",
+      "uuid": "39013109-ac27-4716-b6be-f2cedf9e0fae@a728a",
+      "displayName": "",
+      "id": "a728a",
+      "name": "Horse_20_Material.material",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "20c48": {
+      "importer": "gltf-scene",
+      "uuid": "39013109-ac27-4716-b6be-f2cedf9e0fae@20c48",
+      "displayName": "",
+      "id": "20c48",
+      "name": "Horse_20.prefab",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "imageMetas": [],
+    "lods": {
+      "enable": false,
+      "hasBuiltinLOD": false,
+      "options": [
+        {
+          "screenRatio": 0.25,
+          "faceCount": 1
+        },
+        {
+          "screenRatio": 0.125,
+          "faceCount": 0.25
+        },
+        {
+          "screenRatio": 0.01,
+          "faceCount": 0.1
+        }
+      ]
+    },
+    "assetFinder": {
+      "meshes": [
+        "39013109-ac27-4716-b6be-f2cedf9e0fae@0f86f"
+      ],
+      "skeletons": [],
+      "textures": [],
+      "materials": [
+        "39013109-ac27-4716-b6be-f2cedf9e0fae@a728a"
+      ],
+      "scenes": [
+        "39013109-ac27-4716-b6be-f2cedf9e0fae@20c48"
+      ]
+    }
+  }
+}

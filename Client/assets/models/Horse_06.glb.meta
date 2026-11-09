@@ -1,0 +1,93 @@
+{
+  "ver": "2.3.14",
+  "importer": "gltf",
+  "imported": true,
+  "uuid": "0d1f29c4-45f6-4fe6-ab4d-f9cac09490a2",
+  "files": [],
+  "subMetas": {
+    "aab75": {
+      "importer": "gltf-mesh",
+      "uuid": "0d1f29c4-45f6-4fe6-ab4d-f9cac09490a2@aab75",
+      "displayName": "",
+      "id": "aab75",
+      "name": "Horse_06_Mesh.mesh",
+      "userData": {
+        "gltfIndex": 0,
+        "triangleCount": 276
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "317c6": {
+      "importer": "gltf-material",
+      "uuid": "0d1f29c4-45f6-4fe6-ab4d-f9cac09490a2@317c6",
+      "displayName": "",
+      "id": "317c6",
+      "name": "Horse_06_Material.material",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "1fe53": {
+      "importer": "gltf-scene",
+      "uuid": "0d1f29c4-45f6-4fe6-ab4d-f9cac09490a2@1fe53",
+      "displayName": "",
+      "id": "1fe53",
+      "name": "Horse_06.prefab",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "imageMetas": [],
+    "lods": {
+      "enable": false,
+      "hasBuiltinLOD": false,
+      "options": [
+        {
+          "screenRatio": 0.25,
+          "faceCount": 1
+        },
+        {
+          "screenRatio": 0.125,
+          "faceCount": 0.25
+        },
+        {
+          "screenRatio": 0.01,
+          "faceCount": 0.1
+        }
+      ]
+    },
+    "assetFinder": {
+      "meshes": [
+        "0d1f29c4-45f6-4fe6-ab4d-f9cac09490a2@aab75"
+      ],
+      "skeletons": [],
+      "textures": [],
+      "materials": [
+        "0d1f29c4-45f6-4fe6-ab4d-f9cac09490a2@317c6"
+      ],
+      "scenes": [
+        "0d1f29c4-45f6-4fe6-ab4d-f9cac09490a2@1fe53"
+      ]
+    }
+  }
+}

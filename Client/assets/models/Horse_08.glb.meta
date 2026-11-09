@@ -1,0 +1,93 @@
+{
+  "ver": "2.3.14",
+  "importer": "gltf",
+  "imported": true,
+  "uuid": "31fa9688-3974-4f3b-ab9a-c4ee126e933d",
+  "files": [],
+  "subMetas": {
+    "153e6": {
+      "importer": "gltf-mesh",
+      "uuid": "31fa9688-3974-4f3b-ab9a-c4ee126e933d@153e6",
+      "displayName": "",
+      "id": "153e6",
+      "name": "Horse_08_Mesh.mesh",
+      "userData": {
+        "gltfIndex": 0,
+        "triangleCount": 276
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "fd533": {
+      "importer": "gltf-material",
+      "uuid": "31fa9688-3974-4f3b-ab9a-c4ee126e933d@fd533",
+      "displayName": "",
+      "id": "fd533",
+      "name": "Horse_08_Material.material",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "619b2": {
+      "importer": "gltf-scene",
+      "uuid": "31fa9688-3974-4f3b-ab9a-c4ee126e933d@619b2",
+      "displayName": "",
+      "id": "619b2",
+      "name": "Horse_08.prefab",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "imageMetas": [],
+    "lods": {
+      "enable": false,
+      "hasBuiltinLOD": false,
+      "options": [
+        {
+          "screenRatio": 0.25,
+          "faceCount": 1
+        },
+        {
+          "screenRatio": 0.125,
+          "faceCount": 0.25
+        },
+        {
+          "screenRatio": 0.01,
+          "faceCount": 0.1
+        }
+      ]
+    },
+    "assetFinder": {
+      "meshes": [
+        "31fa9688-3974-4f3b-ab9a-c4ee126e933d@153e6"
+      ],
+      "skeletons": [],
+      "textures": [],
+      "materials": [
+        "31fa9688-3974-4f3b-ab9a-c4ee126e933d@fd533"
+      ],
+      "scenes": [
+        "31fa9688-3974-4f3b-ab9a-c4ee126e933d@619b2"
+      ]
+    }
+  }
+}

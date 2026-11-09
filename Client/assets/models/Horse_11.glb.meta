@@ -1,0 +1,93 @@
+{
+  "ver": "2.3.14",
+  "importer": "gltf",
+  "imported": true,
+  "uuid": "8a8359e9-7cb2-432c-95ee-e801e32f1510",
+  "files": [],
+  "subMetas": {
+    "d8fe4": {
+      "importer": "gltf-mesh",
+      "uuid": "8a8359e9-7cb2-432c-95ee-e801e32f1510@d8fe4",
+      "displayName": "",
+      "id": "d8fe4",
+      "name": "Horse_11_Mesh.mesh",
+      "userData": {
+        "gltfIndex": 0,
+        "triangleCount": 276
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "bbab3": {
+      "importer": "gltf-material",
+      "uuid": "8a8359e9-7cb2-432c-95ee-e801e32f1510@bbab3",
+      "displayName": "",
+      "id": "bbab3",
+      "name": "Horse_11_Material.material",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "bd06c": {
+      "importer": "gltf-scene",
+      "uuid": "8a8359e9-7cb2-432c-95ee-e801e32f1510@bd06c",
+      "displayName": "",
+      "id": "bd06c",
+      "name": "Horse_11.prefab",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "imageMetas": [],
+    "lods": {
+      "enable": false,
+      "hasBuiltinLOD": false,
+      "options": [
+        {
+          "screenRatio": 0.25,
+          "faceCount": 1
+        },
+        {
+          "screenRatio": 0.125,
+          "faceCount": 0.25
+        },
+        {
+          "screenRatio": 0.01,
+          "faceCount": 0.1
+        }
+      ]
+    },
+    "assetFinder": {
+      "meshes": [
+        "8a8359e9-7cb2-432c-95ee-e801e32f1510@d8fe4"
+      ],
+      "skeletons": [],
+      "textures": [],
+      "materials": [
+        "8a8359e9-7cb2-432c-95ee-e801e32f1510@bbab3"
+      ],
+      "scenes": [
+        "8a8359e9-7cb2-432c-95ee-e801e32f1510@bd06c"
+      ]
+    }
+  }
+}

@@ -96,7 +96,7 @@ export class PariMutuelHelper {
             lbl.string = `💰 浮动彩池: ${PariMutuelHelper.formatMoney(poolAmount)} 🪙`;
         }
         WestTypography.apply(lbl, "caption", {
-            size: 12,
+            size: 13.5,
             color: WestColors.GOLD_BRIGHT,
         });
 
@@ -249,7 +249,7 @@ export class PariMutuelHelper {
         const fl = footNode.addComponent(Label);
         fl.string = "🌵 怀俄明柯尔特特区公署 · Pari-Mutuel 浮动彩池公证 🌵";
         WestTypography.apply(fl, "caption", {
-            size: 12,
+            size: 13,
             color: WestColors.INK_SOFT,
         });
 

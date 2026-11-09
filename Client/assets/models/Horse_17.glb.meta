@@ -1,0 +1,93 @@
+{
+  "ver": "2.3.14",
+  "importer": "gltf",
+  "imported": true,
+  "uuid": "f076aca0-7b52-4eae-b5b2-5c8369f504d6",
+  "files": [],
+  "subMetas": {
+    "81455": {
+      "importer": "gltf-material",
+      "uuid": "f076aca0-7b52-4eae-b5b2-5c8369f504d6@81455",
+      "displayName": "",
+      "id": "81455",
+      "name": "Horse_17_Material.material",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "48c56": {
+      "importer": "gltf-mesh",
+      "uuid": "f076aca0-7b52-4eae-b5b2-5c8369f504d6@48c56",
+      "displayName": "",
+      "id": "48c56",
+      "name": "Horse_17_Mesh.mesh",
+      "userData": {
+        "gltfIndex": 0,
+        "triangleCount": 276
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "493ca": {
+      "importer": "gltf-scene",
+      "uuid": "f076aca0-7b52-4eae-b5b2-5c8369f504d6@493ca",
+      "displayName": "",
+      "id": "493ca",
+      "name": "Horse_17.prefab",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "imageMetas": [],
+    "lods": {
+      "enable": false,
+      "hasBuiltinLOD": false,
+      "options": [
+        {
+          "screenRatio": 0.25,
+          "faceCount": 1
+        },
+        {
+          "screenRatio": 0.125,
+          "faceCount": 0.25
+        },
+        {
+          "screenRatio": 0.01,
+          "faceCount": 0.1
+        }
+      ]
+    },
+    "assetFinder": {
+      "meshes": [
+        "f076aca0-7b52-4eae-b5b2-5c8369f504d6@48c56"
+      ],
+      "skeletons": [],
+      "textures": [],
+      "materials": [
+        "f076aca0-7b52-4eae-b5b2-5c8369f504d6@81455"
+      ],
+      "scenes": [
+        "f076aca0-7b52-4eae-b5b2-5c8369f504d6@493ca"
+      ]
+    }
+  }
+}

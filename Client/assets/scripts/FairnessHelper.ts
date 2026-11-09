@@ -67,7 +67,7 @@ export class FairnessHelper {
             ? `🔐 公平承诺已验算 (SHA-256)`
             : `🔐 承诺锁定: ${shortCommit}`;
         WestTypography.apply(lbl, "caption", {
-            size: 12,
+            size: 13.5,
             color: isSettled ? WestColors.DESERT_SAGE : WestColors.GOLD_BRIGHT,
         });
 
@@ -355,7 +355,7 @@ export class FairnessHelper {
         const ll = legalNode.addComponent(Label);
         ll.string = "🌵 怀俄明柯尔特特区赛马会公证署 · SHA-256 密码学链上存证 🌵";
         WestTypography.apply(ll, "caption", {
-            size: 12,
+            size: 13,
             color: WestColors.TEXT_MUTED,
         });
 

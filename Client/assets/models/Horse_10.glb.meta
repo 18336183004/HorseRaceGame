@@ -1,0 +1,93 @@
+{
+  "ver": "2.3.14",
+  "importer": "gltf",
+  "imported": true,
+  "uuid": "536edf62-d634-451d-86da-88e92ef348b3",
+  "files": [],
+  "subMetas": {
+    "5a486": {
+      "importer": "gltf-mesh",
+      "uuid": "536edf62-d634-451d-86da-88e92ef348b3@5a486",
+      "displayName": "",
+      "id": "5a486",
+      "name": "Horse_10_Mesh.mesh",
+      "userData": {
+        "gltfIndex": 0,
+        "triangleCount": 276
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "ffc11": {
+      "importer": "gltf-material",
+      "uuid": "536edf62-d634-451d-86da-88e92ef348b3@ffc11",
+      "displayName": "",
+      "id": "ffc11",
+      "name": "Horse_10_Material.material",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "1554c": {
+      "importer": "gltf-scene",
+      "uuid": "536edf62-d634-451d-86da-88e92ef348b3@1554c",
+      "displayName": "",
+      "id": "1554c",
+      "name": "Horse_10.prefab",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "imageMetas": [],
+    "lods": {
+      "enable": false,
+      "hasBuiltinLOD": false,
+      "options": [
+        {
+          "screenRatio": 0.25,
+          "faceCount": 1
+        },
+        {
+          "screenRatio": 0.125,
+          "faceCount": 0.25
+        },
+        {
+          "screenRatio": 0.01,
+          "faceCount": 0.1
+        }
+      ]
+    },
+    "assetFinder": {
+      "meshes": [
+        "536edf62-d634-451d-86da-88e92ef348b3@5a486"
+      ],
+      "skeletons": [],
+      "textures": [],
+      "materials": [
+        "536edf62-d634-451d-86da-88e92ef348b3@ffc11"
+      ],
+      "scenes": [
+        "536edf62-d634-451d-86da-88e92ef348b3@1554c"
+      ]
+    }
+  }
+}

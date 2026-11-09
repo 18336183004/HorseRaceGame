@@ -5,7 +5,7 @@
  * 支持本地路径动态加载与内存缓存，全面兼容静态贴图路径与 DataURI。
  */
 
-import { ImageAsset, Sprite, SpriteFrame, Texture2D, Node, assetManager, Rect, Size } from "cc";
+import { ImageAsset, Sprite, SpriteFrame, Texture2D, Node, assetManager, Rect, Size, UITransform } from "cc";
 import { HorseAssetRegistry } from "./HorseAssetRegistry";
 import { ClientConfig } from "./ClientConfig";
 
@@ -70,6 +70,14 @@ export class HorseSprites {
     /** 写入缓存并维护 LRU 淘汰机制 */
     private static cacheSet(key: string, spriteFrame: SpriteFrame, isPermanent: boolean = false): void {
         if (!key || !spriteFrame) return;
+        try {
+            spriteFrame.addRef();
+            if (spriteFrame.texture) {
+                spriteFrame.texture.addRef();
+            }
+        } catch {
+            // ignore
+        }
         this.frameCache.set(key, spriteFrame);
         this.accessTimestamps.set(key, Date.now());
         if (isPermanent || this.isPermanentAsset(key)) {
@@ -111,15 +119,8 @@ export class HorseSprites {
             this.accessTimestamps.delete(victimKey);
 
             if (sf && sf.isValid) {
-                if (sf.texture && sf.texture.isValid) {
-                    try {
-                        sf.texture.destroy();
-                    } catch {
-                        // ignore
-                    }
-                }
                 try {
-                    sf.destroy();
+                    sf.decRef();
                 } catch {
                     // ignore
                 }
@@ -140,15 +141,8 @@ export class HorseSprites {
             this.frameCache.delete(key);
             this.accessTimestamps.delete(key);
             if (sf && sf.isValid) {
-                if (sf.texture && sf.texture.isValid) {
-                    try {
-                        sf.texture.destroy();
-                    } catch {
-                        // ignore
-                    }
-                }
                 try {
-                    sf.destroy();
+                    sf.decRef();
                 } catch {
                     // ignore
                 }
@@ -166,8 +160,16 @@ export class HorseSprites {
 
         const cached = this.cacheGet(pathOrUri);
         if (cached && cached.isValid) {
+            const existingUt = targetNode.getComponent(UITransform);
+            const savedW = existingUt?.width;
+            const savedH = existingUt?.height;
+
             const sp = targetNode.getComponent(Sprite) || targetNode.addComponent(Sprite);
+            sp.sizeMode = Sprite.SizeMode.CUSTOM;
             sp.spriteFrame = cached;
+            if (existingUt && savedW && savedH && savedW > 0 && savedH > 0) {
+                existingUt.setContentSize(savedW, savedH);
+            }
             if (onLoaded) onLoaded(cached);
             return;
         }
@@ -192,22 +194,22 @@ export class HorseSprites {
         const cleanWebp = isWebp ? cleanPath : cleanPath.replace(/\.(png|jpg|jpeg)$/i, ".webp");
         const webpRelative = isWebp ? rawRelative : rawRelative.replace(/\.(png|jpg|jpeg)$/i, ".webp");
 
-        // 优先尝试现代高压缩比 WebP 格式（缩减 60-70% 纹理体积与显存占用），若资源未转码则优雅回退至原始 PNG/JPG
-        const candidates: string[] = [];
-        if (!isWebp) {
-            candidates.push(`${apiBase}/${webpRelative}`);
-            candidates.push(`${apiBase}/assets/${webpRelative}`);
-            candidates.push(cleanWebp);
-            candidates.push(`assets/${cleanWebp}`);
-        }
-        candidates.push(
+        const candidates: string[] = [
             `${apiBase}/${rawRelative}`,
             `${apiBase}/assets/${rawRelative}`,
             cleanPath,
             `assets/${cleanPath}`,
             `./${cleanPath}`,
-            `./assets/${cleanPath}`
-        );
+            `./assets/${cleanPath}`,
+        ];
+        if (!isWebp) {
+            candidates.push(
+                `${apiBase}/${webpRelative}`,
+                `${apiBase}/assets/${webpRelative}`,
+                cleanWebp,
+                `assets/${cleanWebp}`
+            );
+        }
 
         this.tryLoadCandidates(targetNode, pathOrUri, candidates, 0, onLoaded);
     }
@@ -231,7 +233,7 @@ export class HorseSprites {
         if (index >= candidates.length) {
             // 所有路径尝试完毕仍未成功，使用 DOM Image 最终尝试原始路径
             this.loadViaHtmlImage(targetNode, candidates[0], originalKey, (sf) => {
-                if (sf && onLoaded) onLoaded(sf);
+                if (onLoaded) onLoaded(sf as SpriteFrame);
             });
             return;
         }
@@ -247,6 +249,9 @@ export class HorseSprites {
                     if (!targetNode || !targetNode.isValid) return;
                     const texture = new Texture2D();
                     texture.image = imageAsset;
+                    texture.setFilters(Texture2D.Filter.LINEAR, Texture2D.Filter.LINEAR);
+                    texture.setMipFilter(Texture2D.Filter.LINEAR);
+                    texture.setWrapMode(Texture2D.WrapMode.CLAMP_TO_EDGE, Texture2D.WrapMode.CLAMP_TO_EDGE);
                     const spriteFrame = new SpriteFrame();
                     spriteFrame.texture = texture;
                     spriteFrame.rect = new Rect(0, 0, imageAsset.width, imageAsset.height);
@@ -255,8 +260,16 @@ export class HorseSprites {
                     HorseSprites.cacheSet(originalKey, spriteFrame);
                     HorseSprites.cacheSet(curUrl, spriteFrame);
 
+                    const existingUt = targetNode.getComponent(UITransform);
+                    const savedW = existingUt?.width;
+                    const savedH = existingUt?.height;
+
                     const sp = targetNode.getComponent(Sprite) || targetNode.addComponent(Sprite);
+                    sp.sizeMode = Sprite.SizeMode.CUSTOM;
                     sp.spriteFrame = spriteFrame;
+                    if (existingUt && savedW && savedH && savedW > 0 && savedH > 0) {
+                        existingUt.setContentSize(savedW, savedH);
+                    }
                     if (onLoaded) onLoaded(spriteFrame);
                 } else {
                     // 尝试用 HTML Image 加载当前路径，若仍失败则尝试下一个 candidate
@@ -302,6 +315,9 @@ export class HorseSprites {
                 const imageAsset = new ImageAsset(img);
                 const texture = new Texture2D();
                 texture.image = imageAsset;
+                texture.setFilters(Texture2D.Filter.LINEAR, Texture2D.Filter.LINEAR);
+                texture.setMipFilter(Texture2D.Filter.LINEAR);
+                texture.setWrapMode(Texture2D.WrapMode.CLAMP_TO_EDGE, Texture2D.WrapMode.CLAMP_TO_EDGE);
                 const spriteFrame = new SpriteFrame();
                 spriteFrame.texture = texture;
                 spriteFrame.rect = new Rect(0, 0, imageAsset.width, imageAsset.height);
@@ -310,8 +326,16 @@ export class HorseSprites {
                 HorseSprites.cacheSet(cacheKey, spriteFrame);
                 HorseSprites.cacheSet(srcUrl, spriteFrame);
 
+                const existingUt = targetNode.getComponent(UITransform);
+                const savedW = existingUt?.width;
+                const savedH = existingUt?.height;
+
                 const sp = targetNode.getComponent(Sprite) || targetNode.addComponent(Sprite);
+                sp.sizeMode = Sprite.SizeMode.CUSTOM;
                 sp.spriteFrame = spriteFrame;
+                if (existingUt && savedW && savedH && savedW > 0 && savedH > 0) {
+                    existingUt.setContentSize(savedW, savedH);
+                }
                 if (callback) callback(spriteFrame);
             } catch (e) {
                 if (callback) callback(null);
@@ -354,6 +378,15 @@ export class HorseSprites {
     ): void {
         const item = this.getHorseItem(horseNo);
         this.applyImage(targetNode, item.spriteUri, onLoaded);
+    }
+
+    /** 为指定马号 (1-20) 绑定 2D 跑道精灵 (别名兼容) */
+    public static applyHorseSprite(
+        targetNode: Node,
+        horseNo: number,
+        onLoaded?: (sf: SpriteFrame) => void
+    ): void {
+        this.applyHorseRunningSprite(targetNode, horseNo, onLoaded);
     }
 
     /** 为指定马号 (1-20) 绑定 2D 油画艺术展示图 */
@@ -514,6 +547,14 @@ export class HorseSprites {
         this.applyImage(targetNode, uri, onLoaded);
     }
 
+    private static _persistentLoaderNode: Node | null = null;
+    private static getPersistentLoaderNode(): Node {
+        if (!this._persistentLoaderNode || !this._persistentLoaderNode.isValid) {
+            this._persistentLoaderNode = new Node("__HorseSprites_PersistentLoader");
+        }
+        return this._persistentLoaderNode;
+    }
+
     private static gallopCacheByHorse: Map<number, { horseFrames: SpriteFrame[]; jockeyFrames: SpriteFrame[] }> = new Map();
     private static gallopCallbacksByHorse: Map<number, Array<(h: SpriteFrame[], j: SpriteFrame[]) => void>> = new Map();
 
@@ -544,12 +585,11 @@ export class HorseSprites {
         list = [callback];
         this.gallopCallbacksByHorse.set(no, list);
 
-        const dummy = new Node(`GallopLoader_${no}`);
-        this.applyImage(dummy, horseGallopPath, (hSf) => {
+        const loaderNode = this.getPersistentLoaderNode();
+        this.applyImage(loaderNode, horseGallopPath, (hSf) => {
             if (!hSf || !hSf.texture) {
                 // 回退到全局通用
                 this.loadGallopAnimation((fallbackH, fallbackJ) => {
-                    dummy.destroy();
                     this.gallopCacheByHorse.set(no, { horseFrames: fallbackH, jockeyFrames: fallbackJ });
                     const cbs = this.gallopCallbacksByHorse.get(no) || [];
                     this.gallopCallbacksByHorse.delete(no);
@@ -559,25 +599,28 @@ export class HorseSprites {
             }
 
             const hTex = hSf.texture as Texture2D;
+            try { hTex.addRef(); } catch {}
             const hFrames: SpriteFrame[] = [];
             for (let i = 0; i < 8; i++) {
                 const sf = new SpriteFrame();
                 sf.texture = hTex;
                 sf.rect = new Rect(i * 128, 0, 128, 128);
                 sf.originalSize = new Size(128, 128);
+                try { sf.addRef(); } catch {}
                 hFrames.push(sf);
             }
 
-            this.applyImage(dummy, jockeyGallopPath, (jSf) => {
-                dummy.destroy();
+            this.applyImage(loaderNode, jockeyGallopPath, (jSf) => {
                 const jFrames: SpriteFrame[] = [];
                 if (jSf && jSf.texture) {
                     const jTex = jSf.texture as Texture2D;
+                    try { jTex.addRef(); } catch {}
                     for (let i = 0; i < 8; i++) {
                         const sf = new SpriteFrame();
                         sf.texture = jTex;
                         sf.rect = new Rect(i * 128, 0, 128, 128);
                         sf.originalSize = new Size(128, 128);
+                        try { sf.addRef(); } catch {}
                         jFrames.push(sf);
                     }
                 }
@@ -611,39 +654,44 @@ export class HorseSprites {
         if (this.isGallopLoading) return;
         this.isGallopLoading = true;
 
-        const dummyNode = new Node("TempGallopLoader");
+        const loaderNode = this.getPersistentLoaderNode();
         const horsePath = "textures/horses/horse_gallop_sheet_8f.png";
         const jockeyPath = "textures/horses/jockey_ride_sheet_8f.png";
 
-        this.applyImage(dummyNode, horsePath, (horseSf) => {
+        this.applyImage(loaderNode, horsePath, (horseSf) => {
             if (!horseSf || !horseSf.texture) {
                 this.isGallopLoading = false;
-                dummyNode.destroy();
+                const cbs = [...this.gallopCallbacks];
+                this.gallopCallbacks = [];
+                cbs.forEach((cb) => cb([], []));
                 return;
             }
             const horseTex = horseSf.texture as Texture2D;
+            try { horseTex.addRef(); } catch {}
             const hFrames: SpriteFrame[] = [];
             for (let i = 0; i < 8; i++) {
                 const sf = new SpriteFrame();
                 sf.texture = horseTex;
                 sf.rect = new Rect(i * 128, 0, 128, 128);
                 sf.originalSize = new Size(128, 128);
+                try { sf.addRef(); } catch {}
                 hFrames.push(sf);
             }
             this.gallopHorseFrames = hFrames;
 
             // 载入骑师图集
-            this.applyImage(dummyNode, jockeyPath, (jockeySf) => {
-                dummyNode.destroy();
+            this.applyImage(loaderNode, jockeyPath, (jockeySf) => {
                 this.isGallopLoading = false;
                 if (jockeySf && jockeySf.texture) {
                     const jockeyTex = jockeySf.texture as Texture2D;
+                    try { jockeyTex.addRef(); } catch {}
                     const jFrames: SpriteFrame[] = [];
                     for (let i = 0; i < 8; i++) {
                         const sf = new SpriteFrame();
                         sf.texture = jockeyTex;
                         sf.rect = new Rect(i * 128, 0, 128, 128);
                         sf.originalSize = new Size(128, 128);
+                        try { sf.addRef(); } catch {}
                         jFrames.push(sf);
                     }
                     this.gallopJockeyFrames = jFrames;

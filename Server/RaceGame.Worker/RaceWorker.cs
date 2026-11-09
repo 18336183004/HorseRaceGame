@@ -371,6 +371,37 @@ public sealed class RaceWorker(
             return;
         }
 
+        if (round.State == RaceState.Settlement)
+        {
+            var rankedHorses = round.Horses.OrderBy(x => x.FinalRank).ToList();
+            var winner = rankedHorses.Count > 0 ? rankedHorses[0].HorseNo : (round.WinnerHorseNo ?? 1);
+            var second = rankedHorses.Count > 1 ? rankedHorses[1].HorseNo : (round.SecondHorseNo ?? 2);
+            round.WinnerHorseNo = winner;
+            round.SecondHorseNo = second;
+            await settlement.SettleAsync(round.Id, winner, ct);
+
+            var finished = await db.RaceRounds.Include(x => x.Horses).FirstAsync(x => x.Id == round.Id, ct);
+            gameLogService.AddRaceLog(finished, "RACE_SETTLED", "SUCCESS", new
+            {
+                winnerHorseNo = finished.WinnerHorseNo,
+                secondHorseNo = finished.SecondHorseNo,
+                quinellaCombination = finished.QuinellaCombination,
+                settlementAt = finished.SettlementAt,
+            });
+            await db.SaveChangesAsync(ct);
+            await PublishAsync(publisher, finished, "RaceSettled", ct);
+
+            if (finished.JackpotDropped)
+            {
+                await publisher.PublishAsync(finished.Id, "MegaJackpotDropped", new
+                {
+                    roundId = finished.Id,
+                    totalPool = finished.JackpotDropAmount,
+                }, ct);
+            }
+            return;
+        }
+
         if (round.State == RaceState.Finished)
         {
             var nextStart = round.BetCount > 0

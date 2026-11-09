@@ -1,0 +1,93 @@
+{
+  "ver": "2.3.14",
+  "importer": "gltf",
+  "imported": true,
+  "uuid": "22431d46-dd0b-466b-bead-2e428956624a",
+  "files": [],
+  "subMetas": {
+    "f90e9": {
+      "importer": "gltf-mesh",
+      "uuid": "22431d46-dd0b-466b-bead-2e428956624a@f90e9",
+      "displayName": "",
+      "id": "f90e9",
+      "name": "Horse_07_Mesh.mesh",
+      "userData": {
+        "gltfIndex": 0,
+        "triangleCount": 276
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "a5703": {
+      "importer": "gltf-material",
+      "uuid": "22431d46-dd0b-466b-bead-2e428956624a@a5703",
+      "displayName": "",
+      "id": "a5703",
+      "name": "Horse_07_Material.material",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "fff82": {
+      "importer": "gltf-scene",
+      "uuid": "22431d46-dd0b-466b-bead-2e428956624a@fff82",
+      "displayName": "",
+      "id": "fff82",
+      "name": "Horse_07.prefab",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "imageMetas": [],
+    "lods": {
+      "enable": false,
+      "hasBuiltinLOD": false,
+      "options": [
+        {
+          "screenRatio": 0.25,
+          "faceCount": 1
+        },
+        {
+          "screenRatio": 0.125,
+          "faceCount": 0.25
+        },
+        {
+          "screenRatio": 0.01,
+          "faceCount": 0.1
+        }
+      ]
+    },
+    "assetFinder": {
+      "meshes": [
+        "22431d46-dd0b-466b-bead-2e428956624a@f90e9"
+      ],
+      "skeletons": [],
+      "textures": [],
+      "materials": [
+        "22431d46-dd0b-466b-bead-2e428956624a@a5703"
+      ],
+      "scenes": [
+        "22431d46-dd0b-466b-bead-2e428956624a@fff82"
+      ]
+    }
+  }
+}

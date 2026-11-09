@@ -1,0 +1,93 @@
+{
+  "ver": "2.3.14",
+  "importer": "gltf",
+  "imported": true,
+  "uuid": "7d53d565-df16-4847-829f-3a2614123ffa",
+  "files": [],
+  "subMetas": {
+    "b6ec3": {
+      "importer": "gltf-mesh",
+      "uuid": "7d53d565-df16-4847-829f-3a2614123ffa@b6ec3",
+      "displayName": "",
+      "id": "b6ec3",
+      "name": "Horse_05_Mesh.mesh",
+      "userData": {
+        "gltfIndex": 0,
+        "triangleCount": 276
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "9c7ba": {
+      "importer": "gltf-material",
+      "uuid": "7d53d565-df16-4847-829f-3a2614123ffa@9c7ba",
+      "displayName": "",
+      "id": "9c7ba",
+      "name": "Horse_05_Material.material",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "7e978": {
+      "importer": "gltf-scene",
+      "uuid": "7d53d565-df16-4847-829f-3a2614123ffa@7e978",
+      "displayName": "",
+      "id": "7e978",
+      "name": "Horse_05.prefab",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "imageMetas": [],
+    "lods": {
+      "enable": false,
+      "hasBuiltinLOD": false,
+      "options": [
+        {
+          "screenRatio": 0.25,
+          "faceCount": 1
+        },
+        {
+          "screenRatio": 0.125,
+          "faceCount": 0.25
+        },
+        {
+          "screenRatio": 0.01,
+          "faceCount": 0.1
+        }
+      ]
+    },
+    "assetFinder": {
+      "meshes": [
+        "7d53d565-df16-4847-829f-3a2614123ffa@b6ec3"
+      ],
+      "skeletons": [],
+      "textures": [],
+      "materials": [
+        "7d53d565-df16-4847-829f-3a2614123ffa@9c7ba"
+      ],
+      "scenes": [
+        "7d53d565-df16-4847-829f-3a2614123ffa@7e978"
+      ]
+    }
+  }
+}

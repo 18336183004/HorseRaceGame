@@ -1,0 +1,93 @@
+{
+  "ver": "2.3.14",
+  "importer": "gltf",
+  "imported": true,
+  "uuid": "6863aa99-2570-4273-bdee-c3498d36df52",
+  "files": [],
+  "subMetas": {
+    "75530": {
+      "importer": "gltf-mesh",
+      "uuid": "6863aa99-2570-4273-bdee-c3498d36df52@75530",
+      "displayName": "",
+      "id": "75530",
+      "name": "Horse_19_Mesh.mesh",
+      "userData": {
+        "gltfIndex": 0,
+        "triangleCount": 276
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "ac263": {
+      "importer": "gltf-material",
+      "uuid": "6863aa99-2570-4273-bdee-c3498d36df52@ac263",
+      "displayName": "",
+      "id": "ac263",
+      "name": "Horse_19_Material.material",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "27c41": {
+      "importer": "gltf-scene",
+      "uuid": "6863aa99-2570-4273-bdee-c3498d36df52@27c41",
+      "displayName": "",
+      "id": "27c41",
+      "name": "Horse_19.prefab",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "imageMetas": [],
+    "lods": {
+      "enable": false,
+      "hasBuiltinLOD": false,
+      "options": [
+        {
+          "screenRatio": 0.25,
+          "faceCount": 1
+        },
+        {
+          "screenRatio": 0.125,
+          "faceCount": 0.25
+        },
+        {
+          "screenRatio": 0.01,
+          "faceCount": 0.1
+        }
+      ]
+    },
+    "assetFinder": {
+      "meshes": [
+        "6863aa99-2570-4273-bdee-c3498d36df52@75530"
+      ],
+      "skeletons": [],
+      "textures": [],
+      "materials": [
+        "6863aa99-2570-4273-bdee-c3498d36df52@ac263"
+      ],
+      "scenes": [
+        "6863aa99-2570-4273-bdee-c3498d36df52@27c41"
+      ]
+    }
+  }
+}

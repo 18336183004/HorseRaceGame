@@ -23,6 +23,7 @@ import {
     _decorator,
 } from "cc";
 import { WestColors } from "./WestTheme";
+import { WestTypography } from "./WestTypography";
 import { HorseSprites } from "./HorseSprites";
 
 export interface HoofSplashParticle {
@@ -35,6 +36,23 @@ export interface HoofSplashParticle {
     alpha: number;
     life: number;
     maxLife: number;
+}
+
+/** 跑道马蹄重踏飞溅泥土块与草皮多边形粒子 */
+export interface HoofClodParticle {
+    x: number;
+    y: number;
+    vx: number;
+    vy: number;
+    rot: number;
+    vRot: number;
+    w: number;
+    h: number;
+    color: Color;
+    alpha: number;
+    life: number;
+    maxLife: number;
+    isTurf: boolean;
 }
 
 /** 统一全场批处理马蹄印数据结构 */
@@ -74,6 +92,9 @@ export class RaceTrack2D extends Component {
     }
 
     private bgG: Graphics | null = null;
+    private dynamicSkyG: Graphics | null = null;
+    private skyAnimTime: number = 0;
+    private readonly eagle = { x: -250, y: 156, vx: 32, wingPhase: 0 };
     private surfaceG: Graphics | null = null;
     private fxG: Graphics | null = null;
 
@@ -93,6 +114,7 @@ export class RaceTrack2D extends Component {
 
     /** 围栏上方西部实木里程碑牌匾容器 (START, 1/4, HALF, 3/4, FINISH) */
     private milestonesContainer: Node | null = null;
+    private milestoneNodes: Node[] = [];
 
     /** 开闸爆发震屏与音效回调 */
     public onGatesOpened?: () => void;
@@ -102,6 +124,13 @@ export class RaceTrack2D extends Component {
     private currentTrackType = "Dirt";
     private currentWeather = "Sunny";
     private isRacing = false;
+    private is3DMode = false;
+
+    // 核心图层节点引用 (供 3D / 2D 自由模式切换)
+    private bgNode: Node | null = null;
+    private surfaceNode: Node | null = null;
+    private borderNode: Node | null = null;
+    private borderG: Graphics | null = null;
 
     // 远景全景大图节点
     private scenicTextureNode: Node | null = null;
@@ -119,6 +148,14 @@ export class RaceTrack2D extends Component {
     private particles: Array<{ x: number; y: number; vx: number; r: number; alpha: number }> = [];
     private splashes: HoofSplashParticle[] = [];
     private readonly splashPool: HoofSplashParticle[] = [];
+
+    // 真实重力泥土块与草皮抛物线迸溅系统 (Heavy Parabolic Mud & Turf Clods)
+    private readonly clods: HoofClodParticle[] = [];
+    private readonly clodPool: HoofClodParticle[] = [];
+
+    // 并驾齐驱激烈死斗摩擦对抗火花系统 (Head-to-Head Duel Clash Energy)
+    private readonly duelClashSparks: Array<{ x: number; y: number; vx: number; vy: number; r: number; alpha: number; life: number; maxLife: number; color: Color }> = [];
+    private readonly duelClashPool: Array<{ x: number; y: number; vx: number; vy: number; r: number; alpha: number; life: number; maxLife: number; color: Color }> = [];
 
     // 马蹄着地微型冲击波环形粒子
     private readonly shockwaves: Array<{ x: number; y: number; r: number; maxR: number; alpha: number; color: Color }> = [];
@@ -138,6 +175,16 @@ export class RaceTrack2D extends Component {
         active: true,
     };
     private tumbleweedTimer: number = 0;
+
+    // 6. 视差多层长卷轴滚动引擎 (Parallax Multi-Layer Scrolling Engine)
+    private scrollX: number = 0;
+    private scrollSpeed: number = 0;
+    private currentLeaderProgress: number = 0;
+    private readonly pneumaticSteamPuffs: Array<{ x: number; y: number; vx: number; vy: number; r: number; alpha: number; life: number; maxLife: number }> = [];
+    private readonly dustWakePuffs: Array<{ x: number; y: number; vx: number; vy: number; r: number; maxR: number; alpha: number; color: Color; life: number; maxLife: number }> = [];
+    private lightningFlashTimer: number = 0;
+    private lightningAlpha: number = 0;
+    private readonly lightningBolt: Array<{ x: number; y: number }> = [];
 
     protected onLoad(): void {
         this.initLayers();
@@ -161,6 +208,7 @@ export class RaceTrack2D extends Component {
         this.node.addChild(bgNode);
         bgNode.setPosition(0, 0, 0);
         bgNode.addComponent(UITransform).setContentSize(this.mapWidth, this.mapHeight);
+        this.bgNode = bgNode;
 
         // 1A. 高清写实西部峡谷全景大图层 (West Ranch Backdrop)
         const scenicNode = new Node("Track2D_ScenicBackdrop");
@@ -175,8 +223,14 @@ export class RaceTrack2D extends Component {
         this.scenicSprite = scenicNode.addComponent(Sprite);
         this.scenicSprite.sizeMode = Sprite.SizeMode.CUSTOM;
 
-        // 1B. 远景与看台装饰图元层 (大气光晕/看台挑檐/铜灯/彩旗/飞鹰)
+        // 1B. 远景与看台装饰图元层 (大气光晕/看台挑檐/铜灯)
         this.bgG = bgNode.addComponent(Graphics);
+
+        // 1C. 远景动态层 (翱翔雄鹰与迎风三角彩旗串)
+        const skyAnimNode = new Node("Track2D_DynamicSkyFX");
+        skyAnimNode.layer = bgNode.layer;
+        bgNode.addChild(skyAnimNode);
+        this.dynamicSkyG = skyAnimNode.addComponent(Graphics);
 
         // 2. 跑道无缝地表纹理层 (Seamless Terrain Layer: 完美覆盖 6 条道次，从 Y=118 到 Y=-138)
         const textureNode = new Node("Track2D_TextureSurface");
@@ -200,6 +254,7 @@ export class RaceTrack2D extends Component {
         this.node.addChild(surfaceNode);
         surfaceNode.setPosition(0, 0, 0);
         surfaceNode.addComponent(UITransform).setContentSize(this.mapWidth, this.mapHeight);
+        this.surfaceNode = surfaceNode;
         this.surfaceG = surfaceNode.addComponent(Graphics);
 
         // 2C. 统一全场马蹄凹痕批处理图元层 (Batched Hoofprints Layer: 6 匹马全部蹄印单批次绘制)
@@ -275,14 +330,14 @@ export class RaceTrack2D extends Component {
         badgeNode.active = false;
         this.sprintBadgeNode = badgeNode;
         const bUt = badgeNode.addComponent(UITransform);
-        bUt.setContentSize(240, 26);
+        bUt.setContentSize(260, 28);
         const bg = badgeNode.addComponent(Graphics);
         bg.fillColor = new Color(38, 20, 12, 235);
-        bg.roundRect(-110, -13, 220, 26, 6);
+        bg.roundRect(-120, -14, 240, 28, 6);
         bg.fill();
         bg.strokeColor = WestColors.GOLD_METALLIC;
         bg.lineWidth = 1.4;
-        bg.roundRect(-110, -13, 220, 26, 6);
+        bg.roundRect(-120, -14, 240, 28, 6);
         bg.stroke();
 
         const bLblNode = new Node("Text");
@@ -290,8 +345,10 @@ export class RaceTrack2D extends Component {
         badgeNode.addChild(bLblNode);
         bLblNode.setPosition(0, 0, 0);
         const bLbl = bLblNode.addComponent(Label);
-        bLbl.fontSize = 12;
-        bLbl.lineHeight = 14;
+        bLbl.fontFamily = WestTypography.FONT_FAMILY;
+        bLbl.fontSize = 13.5;
+        bLbl.lineHeight = 18;
+        bLbl.spacingX = 0.4;
         bLbl.isBold = true;
         bLbl.color = WestColors.GOLD_BRIGHT;
         bLbl.string = "🔥 决胜冲刺 · FINAL SPRINT 🔥";
@@ -306,6 +363,58 @@ export class RaceTrack2D extends Component {
                 len: 30 + Math.random() * 55,
                 alpha: 120 + Math.random() * 110,
             });
+        }
+
+        // 6. 3D 模式专属竞技场视窗边框层 (3D Arena Viewframe Border)
+        const borderNode = new Node("Track2D_ArenaBorder");
+        borderNode.layer = this.node.layer || Layers.Enum.UI_2D;
+        this.node.addChild(borderNode);
+        borderNode.setPosition(0, 0, 0);
+        borderNode.addComponent(UITransform).setContentSize(this.mapWidth, this.mapHeight);
+        this.borderNode = borderNode;
+        this.borderG = borderNode.addComponent(Graphics);
+    }
+
+    /**
+     * 切换 3D 真实全景竞技场 / 2D 经典写实赛道显示模式
+     * 3D 模式下：隐匿 2D 不透明地表与背景，绘制典雅西洋黄铜原木视窗框，使底部的 3D 赛马竞技场与粒子震撼穿透呈现；
+     * 2D 模式下：恢复全套 2D 分层天空、大看台与多道次泥草地表。
+     */
+    public set3DMode(is3D: boolean): void {
+        this.is3DMode = is3D;
+        if (this.bgNode) this.bgNode.active = !is3D;
+        if (this.surfaceTextureNode) this.surfaceTextureNode.active = !is3D;
+        if (this.surfaceNode) this.surfaceNode.active = !is3D;
+        if (this.hoofprintsBatchG && this.hoofprintsBatchG.node) this.hoofprintsBatchG.node.active = !is3D;
+        if (this.milestonesContainer) this.milestonesContainer.active = !is3D;
+        if (this.gatesContainer) this.gatesContainer.active = !is3D;
+
+        if (this.borderG) {
+            this.borderG.clear();
+            if (is3D) {
+                const halfW = this.mapWidth / 2;
+                const halfH = this.mapHeight / 2;
+
+                // 外部深胡桃木与黄铜轮廓框
+                this.borderG.strokeColor = WestColors.BRASS_FRAME;
+                this.borderG.lineWidth = 2.5;
+                this.borderG.roundRect(-halfW, -halfH, this.mapWidth, this.mapHeight, 8);
+                this.borderG.stroke();
+
+                // 上下原木横梁饰条 (顶高 22px, 底高 22px)
+                this.borderG.fillColor = new Color(38, 26, 18, 220);
+                this.borderG.roundRect(-halfW + 4, halfH - 24, this.mapWidth - 8, 20, 4);
+                this.borderG.roundRect(-halfW + 4, -halfH + 4, this.mapWidth - 8, 20, 4);
+                this.borderG.fill();
+
+                // 边角黄铜复古铆钉
+                this.borderG.fillColor = WestColors.GOLD_BRIGHT;
+                [-halfW + 18, -halfW + 80, halfW - 80, halfW - 18].forEach(px => {
+                    this.borderG!.circle(px, halfH - 14, 2.5);
+                    this.borderG!.circle(px, -halfH + 14, 2.5);
+                });
+                this.borderG.fill();
+            }
         }
     }
 
@@ -411,18 +520,6 @@ export class RaceTrack2D extends Component {
             }
         }
 
-        // 远方翱翔雄鹰剪影 (Desert Golden Eagle: 弧形大翅与滑翔气流)
-        const eagleX = -72;
-        const eagleY = skyBottom + 40;
-        g.fillColor = new Color(48, 28, 20, 220);
-        g.moveTo(eagleX, eagleY);
-        g.bezierCurveTo(eagleX - 7, eagleY + 7, eagleX - 16, eagleY + 8, eagleX - 22, eagleY + 3);
-        g.bezierCurveTo(eagleX - 14, eagleY + 4, eagleX - 7, eagleY + 1, eagleX, eagleY - 2);
-        g.bezierCurveTo(eagleX + 7, eagleY + 1, eagleX + 14, eagleY + 4, eagleX + 22, eagleY + 3);
-        g.bezierCurveTo(eagleX + 16, eagleY + 8, eagleX + 7, eagleY + 7, eagleX, eagleY);
-        g.close();
-        g.fill();
-
         // --- B. 西部木质观众看台顶棚、横梁与仿古铜灯 (Rustic Grandstand Balcony) ---
         const roofY = skyBottom + 26;
 
@@ -490,36 +587,6 @@ export class RaceTrack2D extends Component {
                 g.fill();
             }
         }
-
-        // --- C. 屋檐迎风三角彩旗串 (Festive Western Pennants) ---
-        const pennantCount = 28;
-        const pennantStep = (this.mapWidth - 36) / pennantCount;
-        for (let i = 0; i < pennantCount; i++) {
-            const px = -halfW + 18 + i * pennantStep;
-            const pColors = [
-                WestColors.BANDANA_RED,
-                new Color(45, 82, 132, 245),
-                WestColors.CREAM,
-                WestColors.GOLD_METALLIC,
-            ];
-            const pColor = pColors[i % pColors.length];
-
-            // 旗面
-            g.fillColor = pColor;
-            g.moveTo(px, roofY - 1);
-            g.lineTo(px + pennantStep - 1, roofY - 1);
-            g.lineTo(px + pennantStep / 2, roofY - 9);
-            g.close();
-            g.fill();
-
-            // 旗面阴影皱褶 (Fold Shadow)
-            g.fillColor = new Color(0, 0, 0, 35);
-            g.moveTo(px + pennantStep / 2, roofY - 1);
-            g.lineTo(px + pennantStep - 1, roofY - 1);
-            g.lineTo(px + pennantStep / 2, roofY - 9);
-            g.close();
-            g.fill();
-        }
     }
 
     /** 2. 绘制 6 条分立的专业跑道地表、草坪割草纹/车辙与分道线 */
@@ -544,9 +611,20 @@ export class RaceTrack2D extends Component {
         } else if (lower.includes("sand") || lower.includes("沙")) {
             texPath = "textures/tracks/sand_seamless.png";
         }
-        if (this.surfaceTextureNode) {
+        if (this.surfaceTextureNode && this.surfaceTextureNode.isValid) {
+            const ut = this.surfaceTextureNode.getComponent(UITransform);
+            if (ut) {
+                ut.setContentSize(this.mapWidth - 20, trackTotalH);
+            }
             HorseSprites.applyImage(this.surfaceTextureNode, texPath, (sf) => {
+                if (this.surfaceTextureNode && this.surfaceTextureNode.isValid) {
+                    const u = this.surfaceTextureNode.getComponent(UITransform);
+                    if (u) {
+                        u.setContentSize(this.mapWidth - 20, trackTotalH);
+                    }
+                }
                 if (this.surfaceSprite && this.surfaceSprite.isValid) {
+                    this.surfaceSprite.sizeMode = Sprite.SizeMode.CUSTOM;
                     this.surfaceSprite.type = Sprite.Type.TILED;
                 }
             });
@@ -870,6 +948,7 @@ export class RaceTrack2D extends Component {
     private buildMilestones(): void {
         if (!this.milestonesContainer) return;
         this.milestonesContainer.destroyAllChildren();
+        this.milestoneNodes = [];
 
         const markers = [
             { x: -270, label: "START", color: WestColors.BANDANA_RED },
@@ -886,6 +965,7 @@ export class RaceTrack2D extends Component {
             mNode.layer = this.milestonesContainer.layer || Layers.Enum.UI_2D;
             this.milestonesContainer.addChild(mNode);
             mNode.setPosition(m.x, railY, 0);
+            this.milestoneNodes.push(mNode);
 
             const g = mNode.addComponent(Graphics);
 
@@ -903,19 +983,19 @@ export class RaceTrack2D extends Component {
 
             // 2. 实木标牌雕花底板 (Carved Timber Plaque with Brass Trim)
             g.fillColor = m.color;
-            g.roundRect(-20, -9, 40, 18, 4);
+            g.roundRect(-25, -11, 50, 22, 5);
             g.fill();
             g.strokeColor = WestColors.BRASS_FRAME;
             g.lineWidth = 1.4;
-            g.roundRect(-20, -9, 40, 18, 4);
+            g.roundRect(-25, -11, 50, 22, 5);
             g.stroke();
 
             // 四角黄铜角码固定铆钉 (Brass Corner Rivets)
             g.fillColor = WestColors.GOLD_METALLIC;
-            g.circle(-16, -6, 1.2);
-            g.circle(16, -6, 1.2);
-            g.circle(-16, 6, 1.2);
-            g.circle(16, 6, 1.2);
+            g.circle(-20, -7, 1.2);
+            g.circle(20, -7, 1.2);
+            g.circle(-20, 7, 1.2);
+            g.circle(20, 7, 1.2);
             g.fill();
 
             const lblNode = new Node("Text");
@@ -923,11 +1003,92 @@ export class RaceTrack2D extends Component {
             mNode.addChild(lblNode);
             lblNode.setPosition(0, 0, 0);
             const lbl = lblNode.addComponent(Label);
-            lbl.fontSize = 10;
-            lbl.lineHeight = 12;
+            lbl.fontFamily = WestTypography.FONT_FAMILY;
+            lbl.fontSize = 11.5;
+            lbl.lineHeight = 14;
+            lbl.spacingX = 0.4;
             lbl.isBold = true;
             lbl.color = m.color === WestColors.GOLD_METALLIC ? WestColors.INK_DARK : WestColors.CREAM;
             lbl.string = m.label;
+
+            // 终点线专属黑白方格旗标与金星徽标 (Finish Post Checkered Standard)
+            if (m.label === "FINISH") {
+                g.strokeColor = WestColors.GOLD_METALLIC;
+                g.lineWidth = 1.4;
+                g.moveTo(0, 9);
+                g.lineTo(0, 24);
+                g.stroke();
+
+                // 黑白方格终点小三角旗
+                g.fillColor = Color.WHITE;
+                g.moveTo(0, 24);
+                g.lineTo(14, 18);
+                g.lineTo(0, 12);
+                g.close();
+                g.fill();
+                g.fillColor = new Color(25, 20, 15, 230);
+                g.rect(1, 16, 6, 4);
+                g.rect(7, 14, 6, 4);
+                g.fill();
+            }
+        }
+    }
+
+    /** 触发终点线照相闪光爆炸反馈 (Slit-Scan Finish Line Strobe Flash & Victory Sparks) */
+    public triggerPhotoFinishFlash(x = 270, y = 0): void {
+        this.lightningAlpha = 240;
+        this.shockwaves.push({
+            x,
+            y,
+            r: 4,
+            maxR: 45,
+            alpha: 255,
+            color: new Color(255, 245, 180, 255),
+        });
+        if (this.fxG) {
+            // 垂直微距狭缝扫描激光束 (Vertical Slit-Scan Laser Beam)
+            this.fxG.strokeColor = new Color(255, 60, 60, 240);
+            this.fxG.lineWidth = 2.4;
+            this.fxG.moveTo(x, -140);
+            this.fxG.lineTo(x, 140);
+            this.fxG.stroke();
+
+            // 激光核心白色强光线
+            this.fxG.strokeColor = Color.WHITE;
+            this.fxG.lineWidth = 1.0;
+            this.fxG.moveTo(x, -140);
+            this.fxG.lineTo(x, 140);
+            this.fxG.stroke();
+
+            // 撞线核心大光晕
+            this.fxG.fillColor = new Color(255, 250, 210, 220);
+            this.fxG.circle(x, y, 22);
+            this.fxG.fill();
+        }
+
+        // 喷射 12 颗金色胜利礼花火星
+        for (let i = 0; i < 12; i++) {
+            const spark = this.duelClashPool.pop() || {
+                x: 0,
+                y: 0,
+                vx: 0,
+                vy: 0,
+                r: 0,
+                alpha: 255,
+                life: 0,
+                maxLife: 1,
+                color: new Color(255, 215, 60, 255),
+            };
+            spark.x = x;
+            spark.y = y;
+            spark.vx = -160 + Math.random() * 200;
+            spark.vy = -120 + Math.random() * 240;
+            spark.r = 1.5 + Math.random() * 2.5;
+            spark.alpha = 255;
+            spark.life = 0;
+            spark.maxLife = 0.35 + Math.random() * 0.25;
+            spark.color.set(255, 215 + Math.floor(Math.random() * 40), 50, 255);
+            this.duelClashSparks.push(spark);
         }
     }
 
@@ -945,22 +1106,50 @@ export class RaceTrack2D extends Component {
                 .start();
         });
 
-        // 6 联装发令闸门前瞬间爆发起步沙浪
+        // 6 联装发令闸门前瞬间爆发起步沙浪与高压气缸蒸汽白雾
         const gateStartX = -272;
         for (let i = 0; i < 6; i++) {
             const laneY = RaceTrack2D.getLaneY(i);
             const ds = RaceTrack2D.getLaneDepthScale(i);
             this.emitHoofImpact(gateStartX, laneY, 2.0, ds);
+            for (let p = 0; p < 4; p++) {
+                this.pneumaticSteamPuffs.push({
+                    x: gateStartX + (Math.random() - 0.5) * 12,
+                    y: laneY + 8 + Math.random() * 8,
+                    vx: 50 + Math.random() * 80,
+                    vy: 12 + (Math.random() - 0.5) * 24,
+                    r: (3.5 + Math.random() * 3.5) * ds,
+                    alpha: 220,
+                    life: 0,
+                    maxLife: 0.45 + Math.random() * 0.25,
+                });
+            }
         }
 
         // 触发开闸瞬间相机震动与枪响反馈
         this.onGatesOpened?.();
     }
 
-    /** 重置起跑闸门为闭合锁止状态 */
+    /** 重置起跑闸门为闭合锁止状态并归位视差长卷轴 */
     public resetStartingGates(): void {
         this.isGatesOpened = false;
         this.isRacing = false;
+        this.scrollX = 0;
+        this.scrollSpeed = 0;
+        this.currentLeaderProgress = 0;
+        if (this.pneumaticSteamPuffs) {
+            this.pneumaticSteamPuffs.length = 0;
+        }
+        if (this.dustWakePuffs) {
+            this.dustWakePuffs.length = 0;
+        }
+        if (this.gatesContainer && this.gatesContainer.isValid) {
+            this.gatesContainer.setPosition(0, 0, 0);
+            this.gatesContainer.active = !this.is3DMode;
+        }
+        if (this.surfaceTextureNode && this.surfaceTextureNode.isValid) {
+            this.surfaceTextureNode.setPosition(0, (118 + -138) / 2, 0);
+        }
         (this.gateBars ?? []).forEach((bar) => {
             if (!bar || !bar.isValid) return;
             bar.setScale(new Vec3(1, 1, 1));
@@ -969,6 +1158,7 @@ export class RaceTrack2D extends Component {
         if (this.fxG) {
             this.fxG.clear();
         }
+        this.buildMilestones();
     }
 
     /** 设置是否处于赛跑冲刺阶段（激活跑道流光与扬尘微粒） */
@@ -988,6 +1178,7 @@ export class RaceTrack2D extends Component {
      */
     public setSprintProgress(leaderProgress: number, _leaderLaneX?: number): void {
         this.sprintProgress = leaderProgress;
+        this.currentLeaderProgress = Math.max(0, Math.min(1.0, leaderProgress));
         if (leaderProgress >= 0.70 && leaderProgress < 0.98) {
             this.isSprintActive = true;
             this.sprintTargetAlpha = Math.min(1.0, (leaderProgress - 0.70) / 0.12);
@@ -1042,6 +1233,97 @@ export class RaceTrack2D extends Component {
         }
     }
 
+    private allocClod(): HoofClodParticle {
+        return this.clodPool.pop() || {
+            x: 0,
+            y: 0,
+            vx: 0,
+            vy: 0,
+            rot: 0,
+            vRot: 0,
+            w: 0,
+            h: 0,
+            color: new Color(0, 0, 0, 255),
+            alpha: 255,
+            life: 0,
+            maxLife: 1,
+            isTurf: false,
+        };
+    }
+
+    private freeClod(p: HoofClodParticle): void {
+        if (this.clodPool.length < 80) {
+            this.clodPool.push(p);
+        }
+    }
+
+    private allocDuelClashSpark() {
+        return this.duelClashPool.pop() || {
+            x: 0,
+            y: 0,
+            vx: 0,
+            vy: 0,
+            r: 0,
+            alpha: 255,
+            life: 0,
+            maxLife: 1,
+            color: new Color(255, 255, 255, 255),
+        };
+    }
+
+    private freeDuelClashSpark(p: { x: number; y: number; vx: number; vy: number; r: number; alpha: number; life: number; maxLife: number; color: Color }): void {
+        if (this.duelClashPool.length < 120) {
+            this.duelClashPool.push(p);
+        }
+    }
+
+    /**
+     * 触发两马并驾齐驱/身体死斗碰撞摩擦火花与冲击波
+     * @param posX 两马身位碰撞的 X 坐标
+     * @param laneY 碰撞中心跑道 Y 坐标
+     * @param intensity 死斗强度 (0.5 ~ 2.0)
+     */
+    public emitDuelClash(posX: number, laneY: number, intensity: number = 1.0): void {
+        if (!this.isRacing) return;
+
+        // 碰撞微型冲击波
+        if (this.shockwaves.length < 24) {
+            this.shockwaves.push({
+                x: posX,
+                y: laneY,
+                r: 3,
+                maxR: (12 + intensity * 6),
+                alpha: 220,
+                color: RaceTrack2D._tempClashShockColor,
+            });
+        }
+
+        // 迸发 6~12 颗明亮金属摩擦火花与电光
+        const count = Math.min(14, Math.floor((6 + Math.random() * 5) * intensity));
+        for (let i = 0; i < count; i++) {
+            const sp = this.allocDuelClashSpark();
+            sp.x = posX + (Math.random() - 0.5) * 12;
+            sp.y = laneY + (Math.random() - 0.5) * 16;
+            const angle = Math.random() * Math.PI * 2;
+            const speed = 75 + Math.random() * 110 * intensity;
+            sp.vx = Math.cos(angle) * speed;
+            sp.vy = Math.sin(angle) * speed;
+            sp.r = 1.2 + Math.random() * 1.6;
+            const isBlue = Math.random() > 0.45;
+            sp.color.set(
+                isBlue ? 190 : 255,
+                isBlue ? 230 : 210,
+                isBlue ? 255 : 80,
+                255
+            );
+            sp.alpha = 255;
+            sp.life = 0;
+            sp.maxLife = 0.22 + Math.random() * 0.18;
+            this.duelClashSparks.push(sp);
+        }
+    }
+
+
     /**
      * 接收马匹实际踏地事件，在马蹄精确着力点爆发飞溅泥沙/草屑与粉尘抛物线
      * @param posX 马蹄踏地绝对 X 坐标 (如 -270 ~ 270)
@@ -1082,27 +1364,27 @@ export class RaceTrack2D extends Component {
             if (isSnow) {
                 // 雪地扬起洁白冰晶碎雪与淡蓝微粒
                 col = Math.random() > 0.3
-                    ? new Color(245, 248, 255, 245)
-                    : new Color(210, 230, 255, 230);
+                    ? RaceTrack2D._tempImpactSnow1
+                    : RaceTrack2D._tempImpactSnow2;
                 radius = (1.2 + Math.random() * 1.8) * depthScale;
                 maxLife = 0.42 + Math.random() * 0.22;
             } else if (isRainy) {
                 // 雨天泥泞深褐色沉重湿泥浆
                 col = Math.random() > 0.4
-                    ? new Color(52, 34, 20, 250)
-                    : new Color(78, 48, 26, 245);
+                    ? RaceTrack2D._tempImpactRainMud1
+                    : RaceTrack2D._tempImpactRainMud2;
                 radius = (2.0 + Math.random() * 2.4) * depthScale;
             } else if (isTurf) {
                 // 绿茵草屑与黑色草根泥
                 col = Math.random() > 0.4
-                    ? new Color(48, 128, 42, 245)
-                    : new Color(75, 48, 28, 245);
+                    ? RaceTrack2D._tempImpactTurf1
+                    : RaceTrack2D._tempImpactTurf2;
             } else if (isSand) {
-                // 干燥细沙与暖金扬尘
-                col = new Color(225 + Math.floor(Math.random() * 25), 185 + Math.floor(Math.random() * 35), 115, 235);
+                // 干燥细沙与暖金扬尘 (零 GC 预设色)
+                col = RaceTrack2D._tempImpactSand;
             } else {
-                // 经典红土泥地
-                col = new Color(135 + Math.floor(Math.random() * 35), 75 + Math.floor(Math.random() * 25), 45, 245);
+                // 经典红土泥地 (零 GC 预设色)
+                col = RaceTrack2D._tempImpactDirt;
             }
 
             const p = this.allocSplash();
@@ -1118,6 +1400,29 @@ export class RaceTrack2D extends Component {
             this.splashes.push(p);
         }
 
+        // 真实大粒径重力翻滚泥块与草皮抛物线 (Heavy Parabolic Clods)
+        const clodCount = Math.floor((2 + Math.random() * 3) * intensity);
+        for (let c = 0; c < clodCount; c++) {
+            const clod = this.allocClod();
+            clod.x = posX + (Math.random() * 6 - 3) * depthScale;
+            clod.y = laneY + (Math.random() * 4 - 2) * depthScale;
+            clod.vx = (-85 - Math.random() * 115) * depthScale;
+            clod.vy = (55 + Math.random() * 95) * depthScale;
+            clod.rot = Math.random() * Math.PI * 2;
+            clod.vRot = (Math.random() - 0.5) * 16.0;
+            clod.w = (3.0 + Math.random() * 3.5) * depthScale;
+            clod.h = (2.0 + Math.random() * 2.8) * depthScale;
+            clod.isTurf = isTurf && Math.random() > 0.4;
+            const baseCol = isTurf
+                ? (clod.isTurf ? RaceTrack2D._tempImpactTurf1 : RaceTrack2D._tempImpactTurf2)
+                : (isSand ? RaceTrack2D._tempImpactSand : RaceTrack2D._tempImpactDirt);
+            clod.color.set(baseCol.r, baseCol.g, baseCol.b, baseCol.a);
+            clod.alpha = 255;
+            clod.life = 0;
+            clod.maxLife = 0.45 + Math.random() * 0.25;
+            this.clods.push(clod);
+        }
+
         // 雨天额外触发 2-3 颗晶莹水雾微滴
         if (isRainy) {
             const waterDrops = Math.floor(2 + Math.random() * 2);
@@ -1128,12 +1433,28 @@ export class RaceTrack2D extends Component {
                 wp.vx = (-110 - Math.random() * 100) * depthScale;
                 wp.vy = (45 + Math.random() * 80) * depthScale;
                 wp.r = (1.0 + Math.random() * 1.4) * depthScale;
-                wp.color.set(195, 220, 250, 210);
+                wp.color.set(RaceTrack2D._tempImpactWater.r, RaceTrack2D._tempImpactWater.g, RaceTrack2D._tempImpactWater.b, RaceTrack2D._tempImpactWater.a);
                 wp.alpha = 210;
                 wp.life = 0;
                 wp.maxLife = 0.28 + Math.random() * 0.16;
                 this.splashes.push(wp);
             }
+        }
+
+        // 泥地/沙地高速奔腾踏地气流卷起大团扩张烟尘 (Billowing Hoof Dust Wake Plume)
+        if (this.dustWakePuffs.length < 32 && !isRainy) {
+            this.dustWakePuffs.push({
+                x: posX - 6 * depthScale,
+                y: laneY + (Math.random() * 4 - 2) * depthScale,
+                vx: (-38 - Math.random() * 32) * depthScale,
+                vy: (12 + Math.random() * 18) * depthScale,
+                r: 3.5 * depthScale,
+                maxR: (15 + Math.random() * 10) * depthScale,
+                alpha: Math.floor(95 * intensity),
+                color: palette.particleColor,
+                life: 0,
+                maxLife: 0.48 + Math.random() * 0.22,
+            });
         }
     }
 
@@ -1141,17 +1462,119 @@ export class RaceTrack2D extends Component {
     private static readonly _tempRainColor = new Color(210, 225, 245, 140);
     private static readonly _tempStormColor = new Color(225, 185, 125, 80);
     private static readonly _tempSplashColor = new Color(0, 0, 0, 255);
+    private static readonly _tempEagleColor = new Color(42, 24, 16, 230);
+    private static readonly _tempFoldColor = new Color(0, 0, 0, 35);
+    private static readonly _tempSpecHeadColor = new Color(210, 175, 140, 240);
+    private static readonly _tempSpecHatColor = new Color(50, 36, 26, 245);
+    private static readonly _tempSpecFlagArmColor = new Color(40, 30, 20, 240);
+    private static readonly _tempPennantColors = [
+        WestColors.BANDANA_RED,
+        new Color(45, 82, 132, 245),
+        WestColors.CREAM,
+        WestColors.GOLD_METALLIC,
+    ];
+    private static readonly _tempSpecVestColors = [
+        new Color(95, 65, 45, 230),
+        new Color(45, 60, 85, 230),
+        new Color(125, 55, 40, 230),
+        new Color(60, 70, 50, 230),
+    ];
+    private static readonly _tempHoofStrokeColor = new Color(68, 42, 24, 255);
+    private static readonly _tempHoofFillColor = new Color(50, 30, 16, 255);
+    private static readonly _tempLetterboxFill = new Color(15, 9, 6, 255);
+    private static readonly _tempLetterboxStroke = new Color(241, 196, 15, 255);
+    private static readonly _tempVignetteFill = new Color(15, 9, 6, 255);
+    private static readonly _tempStreamerStroke = new Color(245, 215, 120, 255);
+    private static readonly _tempSteamColor = new Color(245, 248, 255, 255);
+    private static readonly _tempWakeColor = new Color(0, 0, 0, 255);
+    private static readonly _tempRainGloss = new Color(225, 240, 255, 14);
+    private static readonly _tempLightningSky = new Color(225, 240, 255, 255);
+    private static readonly _tempLightningMain = new Color(255, 255, 255, 255);
+    private static readonly _tempLightningGlow = new Color(135, 205, 255, 255);
+    private static readonly _tempTumbleShadow = new Color(20, 12, 8, 45);
+    private static readonly _tempTumbleBranch = new Color(175, 135, 88, 220);
+    private static readonly _tempImpactSnow1 = new Color(245, 248, 255, 245);
+    private static readonly _tempImpactSnow2 = new Color(210, 230, 255, 230);
+    private static readonly _tempImpactRainMud1 = new Color(52, 34, 20, 250);
+    private static readonly _tempImpactRainMud2 = new Color(78, 48, 26, 245);
+    private static readonly _tempImpactTurf1 = new Color(48, 128, 42, 245);
+    private static readonly _tempImpactTurf2 = new Color(75, 48, 28, 245);
+    private static readonly _tempImpactSand = new Color(235, 195, 120, 235);
+    private static readonly _tempImpactDirt = new Color(145, 85, 50, 245);
+    private static readonly _tempImpactWater = new Color(195, 220, 250, 210);
+    private static readonly _tempPhotoFlashColor = new Color(255, 255, 240, 180);
+    private static readonly _tempPhotoSparkColor = new Color(255, 245, 200, 240);
+    private static readonly _tempClashShockColor = new Color(255, 230, 150, 220);
+    private static readonly _tempClodColor = new Color(0, 0, 0, 255);
+    private static readonly _tempClashSparkColor = new Color(255, 255, 255, 255);
 
     /** 每帧更新赛道飞沙粒子、全屏天气与竞技氛围 */
     protected update(dt: number): void {
+        const halfW = this.mapWidth / 2;
+        const halfH = this.mapHeight / 2;
+
+        // 驱动多层视差长卷轴跑道位移 (Parallax Scrolling Engine)
+        if (this.isRacing) {
+            const baseSpeed = this.isSprintActive ? 520 : 360;
+            this.scrollSpeed += (baseSpeed - this.scrollSpeed) * (1 - Math.exp(-4.5 * dt));
+            this.scrollX += this.scrollSpeed * dt;
+
+            // A. 地表无缝纹理平移
+            if (this.surfaceTextureNode && this.surfaceTextureNode.isValid) {
+                const step = 256;
+                const offsetX = -(this.scrollX % step);
+                const trackCenterY = (118 + -138) / 2;
+                this.surfaceTextureNode.setPosition(offsetX, trackCenterY, 0);
+            }
+
+            // B. 起跑闸门在开跑后向左平滑离场
+            if (this.gatesContainer && this.gatesContainer.isValid) {
+                const gateX = -this.scrollX * 0.95;
+                this.gatesContainer.setPosition(gateX, 0, 0);
+                this.gatesContainer.active = !this.is3DMode && (gateX > -this.mapWidth - 50);
+            }
+
+            // C. 动态里程碑随赛程自右向左平移
+            if (this.milestonesContainer && this.milestonesContainer.isValid) {
+                const totalCoursePx = 2400; // 模拟 1200m 赛道全长像素
+                const currentDistPx = this.currentLeaderProgress * totalCoursePx;
+                const markerOffsets = [
+                    { label: "START", targetDist: 0 },
+                    { label: "1/4", targetDist: totalCoursePx * 0.25 },
+                    { label: "HALF", targetDist: totalCoursePx * 0.50 },
+                    { label: "3/4", targetDist: totalCoursePx * 0.75 },
+                    { label: "FINISH", targetDist: totalCoursePx },
+                ];
+                for (let m = 0; m < this.milestoneNodes.length; m++) {
+                    const mNode = this.milestoneNodes[m];
+                    const cfg = markerOffsets[m];
+                    if (mNode && mNode.isValid && cfg) {
+                        const screenX = (cfg.targetDist - currentDistPx) - 60;
+                        mNode.setPosition(screenX, 126, 0);
+                        mNode.active = screenX >= -halfW - 50 && screenX <= halfW + 50;
+                    }
+                }
+            }
+
+            // D. 远景自然天际线视差慢移 (0.06x)
+            if (this.scenicTextureNode && this.scenicTextureNode.isValid) {
+                const scenicShift = -(this.scrollX * 0.06) % 64;
+                const scenicH = 175;
+                const scenicY = (this.mapHeight / 2) - (scenicH / 2) - 4;
+                this.scenicTextureNode.setPosition(scenicShift, scenicY, 0);
+            }
+        }
+
         // 驱动统一合批马蹄印渲染 (即便比赛结束仍继续渐隐 3 秒)
         this.updateBatchedHoofprints(Date.now());
+
+        // 驱动远景迎风彩旗与翱翔雄鹰动态渲染
+        this.updateScenicAnimations(dt);
 
         if (!this.fxG) return;
         this.fxG.clear();
 
         const palette = this.getPalette();
-        const halfW = this.mapWidth / 2;
 
         // 1. 常驻流动跑道微尘与环境浮粒 (保持赛场生机活力)
         (this.particles ?? []).forEach((p) => {
@@ -1172,6 +1595,27 @@ export class RaceTrack2D extends Component {
             this.fxG!.circle(p.x, p.y, p.r);
             this.fxG!.fill();
         });
+
+        // 1B. 绘制起跑发令高压蒸汽爆破云团 (Pneumatic Steam Burst)
+        if (this.pneumaticSteamPuffs.length > 0) {
+            for (let i = this.pneumaticSteamPuffs.length - 1; i >= 0; i--) {
+                const puff = this.pneumaticSteamPuffs[i];
+                puff.life += dt;
+                if (puff.life >= puff.maxLife) {
+                    this.pneumaticSteamPuffs.splice(i, 1);
+                    continue;
+                }
+                puff.x += puff.vx * dt;
+                puff.y += puff.vy * dt;
+                puff.r += dt * 16.0;
+                const progress = puff.life / puff.maxLife;
+                const alpha = Math.floor(puff.alpha * (1 - progress));
+                RaceTrack2D._tempSteamColor.a = alpha;
+                this.fxG.fillColor = RaceTrack2D._tempSteamColor;
+                this.fxG.circle(puff.x, puff.y, puff.r);
+                this.fxG.fill();
+            }
+        }
 
         // 2. 动态全屏天气与赛道环境物理层 (Rain 雨丝+积水涟漪 / Sandstorm 飞沙狂风)
         const weatherLower = this.currentWeather.toLowerCase();
@@ -1223,6 +1667,13 @@ export class RaceTrack2D extends Component {
                 this.fxG.ellipse(rip.x, rip.y, rip.r * 1.8, rip.r * 0.7);
                 this.fxG.stroke();
             }
+
+            // 地面积水漫反射柔光 (Wet Surface Specular Gloss)
+            this.fxG.fillColor = RaceTrack2D._tempRainGloss;
+            for (let sp = 0; sp < 4; sp++) {
+                this.fxG.ellipse(-180 + sp * 120, -110 + sp * 62, 68, 6.5);
+            }
+            this.fxG.fill();
         } else if (isSand) {
             // 沙暴呼啸狂风与卷云气流
             this.fxG.strokeColor = RaceTrack2D._tempStormColor;
@@ -1240,6 +1691,59 @@ export class RaceTrack2D extends Component {
             }
         }
 
+        // 2C. 雷雨风暴天气突发折线闪电与全景强光闪烁 (Thunderstorm Lightning Strike)
+        const isStorm = weatherLower.includes("storm") || weatherLower.includes("雷");
+        if (isStorm) {
+            this.lightningFlashTimer += dt;
+            if (this.lightningFlashTimer >= 7.0 + Math.random() * 5.0) {
+                this.lightningFlashTimer = 0;
+                this.lightningAlpha = 220;
+                this.lightningBolt.length = 0;
+                let bx = -180 + Math.random() * 360;
+                let by = 160;
+                this.lightningBolt.push({ x: bx, y: by });
+                while (by > 80) {
+                    bx += (Math.random() - 0.5) * 32;
+                    by -= 14 + Math.random() * 12;
+                    this.lightningBolt.push({ x: bx, y: by });
+                }
+            }
+        }
+
+        if (this.lightningAlpha > 0) {
+            this.lightningAlpha -= dt * 650;
+            const la = Math.max(0, Math.floor(this.lightningAlpha));
+            if (la > 0) {
+                // 全景白蓝闪烁强光
+                RaceTrack2D._tempLightningSky.a = Math.floor(la * 0.42);
+                this.fxG.fillColor = RaceTrack2D._tempLightningSky;
+                this.fxG.rect(-halfW, -halfH, this.mapWidth, this.mapHeight);
+                this.fxG.fill();
+
+                if (this.lightningBolt.length >= 2) {
+                    // 主电弧
+                    RaceTrack2D._tempLightningMain.a = la;
+                    this.fxG.strokeColor = RaceTrack2D._tempLightningMain;
+                    this.fxG.lineWidth = 2.4;
+                    this.fxG.moveTo(this.lightningBolt[0].x, this.lightningBolt[0].y);
+                    for (let b = 1; b < this.lightningBolt.length; b++) {
+                        this.fxG.lineTo(this.lightningBolt[b].x, this.lightningBolt[b].y);
+                    }
+                    this.fxG.stroke();
+
+                    // 外层青蓝光晕
+                    RaceTrack2D._tempLightningGlow.a = Math.floor(la * 0.55);
+                    this.fxG.strokeColor = RaceTrack2D._tempLightningGlow;
+                    this.fxG.lineWidth = 5.2;
+                    this.fxG.moveTo(this.lightningBolt[0].x, this.lightningBolt[0].y);
+                    for (let b = 1; b < this.lightningBolt.length; b++) {
+                        this.fxG.lineTo(this.lightningBolt[b].x, this.lightningBolt[b].y);
+                    }
+                    this.fxG.stroke();
+                }
+            }
+        }
+
         // 3. 西部标志性风滚草物理滚动与自然弹跳仿真 (Rolling Tumbleweed)
         this.tumbleweedTimer += dt;
         if (this.tumbleweed.active) {
@@ -1251,13 +1755,13 @@ export class RaceTrack2D extends Component {
             const currentY = tw.y + bounceH;
 
             // 绘制风滚草地表柔和阴影
-            this.fxG.fillColor = new Color(20, 12, 8, 45);
+            this.fxG.fillColor = RaceTrack2D._tempTumbleShadow;
             const shadowScale = Math.max(0.5, 1.0 - bounceH / 20);
             this.fxG.ellipse(tw.x, tw.y - 4, tw.r * shadowScale, tw.r * 0.35 * shadowScale);
             this.fxG.fill();
 
             // 绘制干草团交错枝条 (Tangled Brush Branches)
-            this.fxG.strokeColor = new Color(175, 135, 88, 220);
+            this.fxG.strokeColor = RaceTrack2D._tempTumbleBranch;
             this.fxG.lineWidth = 1.2;
             const branches = 6;
             for (let b = 0; b < branches; b++) {
@@ -1336,6 +1840,84 @@ export class RaceTrack2D extends Component {
             this.fxG.circle(sp.x, sp.y, sp.r * (0.8 + 0.4 * fade));
             this.fxG.fill();
         }
+
+        // 5C. 更新并渲染马群踏地奔腾烟尘尾迹气团 (Billowing Hoof Dust Wake Plume)
+        for (let dIdx = this.dustWakePuffs.length - 1; dIdx >= 0; dIdx--) {
+            const dp = this.dustWakePuffs[dIdx];
+            dp.life += dt;
+            if (dp.life >= dp.maxLife) {
+                this.dustWakePuffs.splice(dIdx, 1);
+                continue;
+            }
+            dp.x += dp.vx * dt;
+            dp.y += dp.vy * dt;
+            dp.r += (dp.maxR - dp.r) * dt * 3.6; // 随风扩散膨胀
+            const progress = dp.life / dp.maxLife;
+            const a = Math.floor(dp.alpha * (1 - progress));
+            if (a > 0) {
+                RaceTrack2D._tempWakeColor.set(dp.color.r, dp.color.g, dp.color.b, a);
+                this.fxG.fillColor = RaceTrack2D._tempWakeColor;
+                this.fxG.circle(dp.x, dp.y, dp.r);
+                this.fxG.fill();
+            }
+        }
+
+        // 5D. 更新并渲染真实重力多边形翻滚泥块与草皮 (Heavy Parabolic Clods)
+        for (let cIdx = this.clods.length - 1; cIdx >= 0; cIdx--) {
+            const cl = this.clods[cIdx];
+            cl.life += dt;
+            if (cl.life >= cl.maxLife) {
+                this.clods.splice(cIdx, 1);
+                this.freeClod(cl);
+                continue;
+            }
+            cl.x += cl.vx * dt;
+            cl.y += cl.vy * dt;
+            cl.vy -= 460 * dt; // 重力加速度 (g = 460 px/s²)
+            cl.vx *= 0.96;     // 阻力
+            cl.rot += cl.vRot * dt;
+
+            const fade = 1.0 - (cl.life / cl.maxLife);
+            const a = Math.floor(cl.alpha * fade);
+            if (a > 0) {
+                RaceTrack2D._tempClodColor.set(cl.color.r, cl.color.g, cl.color.b, a);
+                this.fxG.fillColor = RaceTrack2D._tempClodColor;
+                // 绘制翻滚多边形小块
+                const cosR = Math.cos(cl.rot);
+                const sinR = Math.sin(cl.rot);
+                const hw = cl.w * 0.5;
+                const hh = cl.h * 0.5;
+                this.fxG.moveTo(cl.x + (-hw * cosR - -hh * sinR), cl.y + (-hw * sinR + -hh * cosR));
+                this.fxG.lineTo(cl.x + (hw * cosR - -hh * sinR), cl.y + (hw * sinR + -hh * cosR));
+                this.fxG.lineTo(cl.x + (hw * cosR - hh * sinR), cl.y + (hw * sinR + hh * cosR));
+                this.fxG.lineTo(cl.x + (-hw * cosR - hh * sinR), cl.y + (-hw * sinR + hh * cosR));
+                this.fxG.close();
+                this.fxG.fill();
+            }
+        }
+
+        // 5E. 更新并渲染两马并驾齐驱死斗电光碰撞火花 (Duel Clash Sparks)
+        for (let spIdx = this.duelClashSparks.length - 1; spIdx >= 0; spIdx--) {
+            const dsp = this.duelClashSparks[spIdx];
+            dsp.life += dt;
+            if (dsp.life >= dsp.maxLife) {
+                this.duelClashSparks.splice(spIdx, 1);
+                this.freeDuelClashSpark(dsp);
+                continue;
+            }
+            dsp.x += dsp.vx * dt;
+            dsp.y += dsp.vy * dt;
+            dsp.vy -= 160 * dt; // 微重力
+            dsp.vx *= 0.95;
+            const fade = 1.0 - (dsp.life / dsp.maxLife);
+            const a = Math.floor(dsp.alpha * fade);
+            if (a > 0) {
+                RaceTrack2D._tempClashSparkColor.set(dsp.color.r, dsp.color.g, dsp.color.b, a);
+                this.fxG.fillColor = RaceTrack2D._tempClashSparkColor;
+                this.fxG.circle(dsp.x, dsp.y, dsp.r * (0.6 + 0.5 * fade));
+                this.fxG.fill();
+            }
+        }
     }
 
     /** 渲染冲刺特写画幅遮罩、动态边缘暗角与极速掠影流光 */
@@ -1357,7 +1939,8 @@ export class RaceTrack2D extends Component {
 
         // 1. 顶部与底部电影感微遮幅 (Cinematic Letterbox Bars with Gold Accent)
         const barH = 16 * a;
-        this.sprintG.fillColor = new Color(15, 9, 6, Math.floor(180 * a));
+        RaceTrack2D._tempLetterboxFill.a = Math.floor(180 * a);
+        this.sprintG.fillColor = RaceTrack2D._tempLetterboxFill;
         // 顶遮幅
         this.sprintG.rect(-halfW, halfH - barH, this.mapWidth, barH);
         this.sprintG.fill();
@@ -1366,7 +1949,8 @@ export class RaceTrack2D extends Component {
         this.sprintG.fill();
 
         // 顶底金边细线
-        this.sprintG.strokeColor = new Color(241, 196, 15, Math.floor(190 * a));
+        RaceTrack2D._tempLetterboxStroke.a = Math.floor(190 * a);
+        this.sprintG.strokeColor = RaceTrack2D._tempLetterboxStroke;
         this.sprintG.lineWidth = 1.0;
         this.sprintG.moveTo(-halfW, halfH - barH);
         this.sprintG.lineTo(halfW, halfH - barH);
@@ -1376,7 +1960,8 @@ export class RaceTrack2D extends Component {
 
         // 2. 左右两侧柔和冲刺暗角 (Side Tension Vignette)
         const vigW = 48 * a;
-        this.sprintG.fillColor = new Color(15, 9, 6, Math.floor(95 * a));
+        RaceTrack2D._tempVignetteFill.a = Math.floor(95 * a);
+        this.sprintG.fillColor = RaceTrack2D._tempVignetteFill;
         this.sprintG.rect(-halfW, -halfH, vigW, this.mapHeight);
         this.sprintG.rect(halfW - vigW, -halfH, vigW, this.mapHeight);
         this.sprintG.fill();
@@ -1391,7 +1976,8 @@ export class RaceTrack2D extends Component {
             }
             const stAlpha = Math.floor(st.alpha * a);
             if (stAlpha > 0) {
-                this.sprintG.strokeColor = new Color(245, 215, 120, stAlpha);
+                RaceTrack2D._tempStreamerStroke.a = stAlpha;
+                this.sprintG.strokeColor = RaceTrack2D._tempStreamerStroke;
                 this.sprintG.moveTo(st.x, st.y);
                 this.sprintG.lineTo(st.x + st.len, st.y);
                 this.sprintG.stroke();
@@ -1419,21 +2005,153 @@ export class RaceTrack2D extends Component {
             const ds = hp.depthScale;
 
             // 1. 马蹄铁 U 形外凸凹槽 (Horseshoe Arch)
-            this.hoofprintsBatchG.strokeColor = new Color(68, 42, 24, alpha);
+            RaceTrack2D._tempHoofStrokeColor.a = alpha;
+            this.hoofprintsBatchG.strokeColor = RaceTrack2D._tempHoofStrokeColor;
             this.hoofprintsBatchG.lineWidth = 1.8 * ds;
             this.hoofprintsBatchG.arc(hp.x, hp.y, 4.2 * ds, -Math.PI * 0.7, Math.PI * 0.7, false);
             this.hoofprintsBatchG.stroke();
 
             // 2. 马蹄深压泥土暗色凹陷核心
-            this.hoofprintsBatchG.fillColor = new Color(50, 30, 16, Math.floor(alpha * 0.65));
+            RaceTrack2D._tempHoofFillColor.a = Math.floor(alpha * 0.65);
+            this.hoofprintsBatchG.fillColor = RaceTrack2D._tempHoofFillColor;
             this.hoofprintsBatchG.circle(hp.x - 0.8 * ds, hp.y, 2.0 * ds);
             this.hoofprintsBatchG.fill();
         }
     }
 
+    /** 绘制迎风飘扬三角彩旗与远景峡谷翱翔雄鹰 */
+    private updateScenicAnimations(dt: number): void {
+        if (!this.dynamicSkyG) return;
+        this.dynamicSkyG.clear();
+        this.skyAnimTime += dt;
+
+        const halfW = this.mapWidth / 2;
+        const skyBottom = 118;
+        const roofY = skyBottom + 26;
+
+        // 1. 翱翔雄鹰 (Soaring Eagle gliding across the canyon sky)
+        this.eagle.x += this.eagle.vx * dt;
+        this.eagle.wingPhase += dt * 4.5;
+        if (this.eagle.x > halfW + 40) {
+            this.eagle.x = -halfW - 40;
+            this.eagle.y = skyBottom + 30 + Math.random() * 20;
+        }
+
+        const flap = Math.sin(this.eagle.wingPhase) * 4.0;
+        const ex = this.eagle.x;
+        const ey = this.eagle.y + Math.sin(this.skyAnimTime * 0.8) * 4.0;
+
+        this.dynamicSkyG.fillColor = RaceTrack2D._tempEagleColor;
+        this.dynamicSkyG.moveTo(ex, ey);
+        this.dynamicSkyG.bezierCurveTo(ex - 7, ey + 6 + flap, ex - 16, ey + 7 + flap, ex - 22, ey + 2 + flap * 0.7);
+        this.dynamicSkyG.bezierCurveTo(ex - 14, ey + 3, ex - 7, ey + 1, ex, ey - 2);
+        this.dynamicSkyG.bezierCurveTo(ex + 7, ey + 1, ex + 14, ey + 3, ex + 22, ey + 2 + flap * 0.7);
+        this.dynamicSkyG.bezierCurveTo(ex + 16, ey + 7 + flap, ex + 7, ey + 6 + flap, ex, ey);
+        this.dynamicSkyG.close();
+        this.dynamicSkyG.fill();
+
+        // 2. 屋檐迎风三角彩旗串动态波浪飘动 (Fluttering Pennants)
+        const pennantCount = 28;
+        const pennantStep = (this.mapWidth - 36) / pennantCount;
+        const pColors = RaceTrack2D._tempPennantColors;
+
+        for (let i = 0; i < pennantCount; i++) {
+            const px = -halfW + 18 + i * pennantStep;
+            const pColor = pColors[i % pColors.length];
+            const wave = Math.sin(this.skyAnimTime * 5.2 + i * 0.65) * 2.8;
+            const waveY = Math.cos(this.skyAnimTime * 4.0 + i * 0.8) * 1.4;
+
+            this.dynamicSkyG.fillColor = pColor;
+            this.dynamicSkyG.moveTo(px, roofY - 1);
+            this.dynamicSkyG.lineTo(px + pennantStep - 1, roofY - 1);
+            this.dynamicSkyG.lineTo(px + pennantStep / 2 + wave, roofY - 9 + waveY);
+            this.dynamicSkyG.close();
+            this.dynamicSkyG.fill();
+
+            // 旗面阴影皱褶 (Fold Shadow)
+            this.dynamicSkyG.fillColor = RaceTrack2D._tempFoldColor;
+            this.dynamicSkyG.moveTo(px + pennantStep / 2, roofY - 1);
+            this.dynamicSkyG.lineTo(px + pennantStep - 1, roofY - 1);
+            this.dynamicSkyG.lineTo(px + pennantStep / 2 + wave, roofY - 9 + waveY);
+            this.dynamicSkyG.close();
+            this.dynamicSkyG.fill();
+        }
+
+        // 3. 看台木栏杆处的欢呼牛仔观众微剪影 (Animated Cheering Western Spectators)
+        const spectatorCount = 16;
+        const specStep = (this.mapWidth - 60) / spectatorCount;
+        const specRailY = roofY - 14;
+        const vestColors = RaceTrack2D._tempSpecVestColors;
+
+        for (let s = 0; s < spectatorCount; s++) {
+            const sx = -halfW + 30 + s * specStep;
+            const cheerSpeed = this.isSprintActive ? 12.0 : (this.isRacing ? 7.5 : 2.0);
+            const cheerPhase = this.skyAnimTime * cheerSpeed + s * 0.9;
+            const maxBounce = this.isSprintActive ? 4.8 : (this.isRacing ? 3.2 : 0.8);
+            const bounce = (this.isRacing || this.isSprintActive) ? Math.abs(Math.sin(cheerPhase)) * maxBounce : Math.sin(cheerPhase) * 0.8;
+            const sy = specRailY + bounce;
+
+            // 身体马甲
+            this.dynamicSkyG.fillColor = vestColors[s % vestColors.length];
+            this.dynamicSkyG.rect(sx - 3, sy - 2, 6, 8);
+            this.dynamicSkyG.fill();
+
+            // 头部
+            this.dynamicSkyG.fillColor = RaceTrack2D._tempSpecHeadColor;
+            this.dynamicSkyG.circle(sx, sy + 7, 2.5);
+            this.dynamicSkyG.fill();
+
+            // 经典牛仔斯泰森宽檐帽 (Stetson Hat)
+            this.dynamicSkyG.fillColor = RaceTrack2D._tempSpecHatColor;
+            if (this.isRacing && s % 3 === 0) {
+                // 兴奋挥舞帽子
+                const hatArmX = sx + 5;
+                const hatArmY = sy + 10 + Math.sin(cheerPhase) * 2;
+                this.dynamicSkyG.ellipse(hatArmX, hatArmY, 4.5, 1.6);
+                this.dynamicSkyG.fill();
+                this.dynamicSkyG.rect(hatArmX - 1.8, hatArmY, 3.6, 2.5);
+                this.dynamicSkyG.fill();
+            } else {
+                // 戴在头上
+                this.dynamicSkyG.ellipse(sx, sy + 8.5, 4.8, 1.8);
+                this.dynamicSkyG.fill();
+                this.dynamicSkyG.rect(sx - 2, sy + 8.5, 4, 3);
+                this.dynamicSkyG.fill();
+            }
+
+            // 冲刺激烈时部分观众挥动小彩旗
+            if (this.isRacing && s % 2 === 1) {
+                const flagArmY = sy + 9 + Math.cos(cheerPhase) * 2;
+                this.dynamicSkyG.strokeColor = RaceTrack2D._tempSpecFlagArmColor;
+                this.dynamicSkyG.lineWidth = 0.8;
+                this.dynamicSkyG.moveTo(sx - 2, sy + 3);
+                this.dynamicSkyG.lineTo(sx - 6, flagArmY);
+                this.dynamicSkyG.stroke();
+
+                this.dynamicSkyG.fillColor = (s % 4 === 1) ? WestColors.BANDANA_RED : WestColors.GOLD_METALLIC;
+                this.dynamicSkyG.moveTo(sx - 6, flagArmY);
+                this.dynamicSkyG.lineTo(sx - 11, flagArmY + 2);
+                this.dynamicSkyG.lineTo(sx - 6, flagArmY - 2);
+                this.dynamicSkyG.close();
+                this.dynamicSkyG.fill();
+            }
+        }
+
+        // 4. 西部实木里程碑吊牌随风轻柔单摆摆动 (Swinging Timber Milestones)
+        for (let m = 0; m < this.milestoneNodes.length; m++) {
+            const mNode = this.milestoneNodes[m];
+            if (mNode && mNode.isValid) {
+                const swing = Math.sin(this.skyAnimTime * 2.2 + m * 0.75) * 3.6;
+                mNode.setRotationFromEuler(0, 0, swing);
+            }
+        }
+    }
+
     protected onDestroy(): void {
         this.onGatesOpened = undefined;
+        this.dynamicSkyG = null;
         this.gateBars.length = 0;
+        this.milestoneNodes.length = 0;
         this.splashes.length = 0;
         this.splashPool.length = 0;
         this.particles.length = 0;
@@ -1441,5 +2159,9 @@ export class RaceTrack2D extends Component {
         this.unifiedHoofprints.length = 0;
         this.weatherDrops.length = 0;
         this.groundRipples.length = 0;
+        this.clods.length = 0;
+        this.clodPool.length = 0;
+        this.duelClashSparks.length = 0;
+        this.duelClashPool.length = 0;
     }
 }

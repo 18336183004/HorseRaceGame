@@ -1,0 +1,93 @@
+{
+  "ver": "2.3.14",
+  "importer": "gltf",
+  "imported": true,
+  "uuid": "5ea7e371-6017-4098-bb96-5280bc03e061",
+  "files": [],
+  "subMetas": {
+    "a72cb": {
+      "importer": "gltf-mesh",
+      "uuid": "5ea7e371-6017-4098-bb96-5280bc03e061@a72cb",
+      "displayName": "",
+      "id": "a72cb",
+      "name": "Horse_04_Mesh.mesh",
+      "userData": {
+        "gltfIndex": 0,
+        "triangleCount": 276
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "97d0f": {
+      "importer": "gltf-material",
+      "uuid": "5ea7e371-6017-4098-bb96-5280bc03e061@97d0f",
+      "displayName": "",
+      "id": "97d0f",
+      "name": "Horse_04_Material.material",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "11fa8": {
+      "importer": "gltf-scene",
+      "uuid": "5ea7e371-6017-4098-bb96-5280bc03e061@11fa8",
+      "displayName": "",
+      "id": "11fa8",
+      "name": "Horse_04.prefab",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "imageMetas": [],
+    "lods": {
+      "enable": false,
+      "hasBuiltinLOD": false,
+      "options": [
+        {
+          "screenRatio": 0.25,
+          "faceCount": 1
+        },
+        {
+          "screenRatio": 0.125,
+          "faceCount": 0.25
+        },
+        {
+          "screenRatio": 0.01,
+          "faceCount": 0.1
+        }
+      ]
+    },
+    "assetFinder": {
+      "meshes": [
+        "5ea7e371-6017-4098-bb96-5280bc03e061@a72cb"
+      ],
+      "skeletons": [],
+      "textures": [],
+      "materials": [
+        "5ea7e371-6017-4098-bb96-5280bc03e061@97d0f"
+      ],
+      "scenes": [
+        "5ea7e371-6017-4098-bb96-5280bc03e061@11fa8"
+      ]
+    }
+  }
+}

@@ -1,0 +1,93 @@
+{
+  "ver": "2.3.14",
+  "importer": "gltf",
+  "imported": true,
+  "uuid": "469be1ad-7ead-43ed-be82-f7ae771a00d0",
+  "files": [],
+  "subMetas": {
+    "cc124": {
+      "importer": "gltf-mesh",
+      "uuid": "469be1ad-7ead-43ed-be82-f7ae771a00d0@cc124",
+      "displayName": "",
+      "id": "cc124",
+      "name": "Horse_13_Mesh.mesh",
+      "userData": {
+        "gltfIndex": 0,
+        "triangleCount": 276
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "966d2": {
+      "importer": "gltf-material",
+      "uuid": "469be1ad-7ead-43ed-be82-f7ae771a00d0@966d2",
+      "displayName": "",
+      "id": "966d2",
+      "name": "Horse_13_Material.material",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "ca91e": {
+      "importer": "gltf-scene",
+      "uuid": "469be1ad-7ead-43ed-be82-f7ae771a00d0@ca91e",
+      "displayName": "",
+      "id": "ca91e",
+      "name": "Horse_13.prefab",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "imageMetas": [],
+    "lods": {
+      "enable": false,
+      "hasBuiltinLOD": false,
+      "options": [
+        {
+          "screenRatio": 0.25,
+          "faceCount": 1
+        },
+        {
+          "screenRatio": 0.125,
+          "faceCount": 0.25
+        },
+        {
+          "screenRatio": 0.01,
+          "faceCount": 0.1
+        }
+      ]
+    },
+    "assetFinder": {
+      "meshes": [
+        "469be1ad-7ead-43ed-be82-f7ae771a00d0@cc124"
+      ],
+      "skeletons": [],
+      "textures": [],
+      "materials": [
+        "469be1ad-7ead-43ed-be82-f7ae771a00d0@966d2"
+      ],
+      "scenes": [
+        "469be1ad-7ead-43ed-be82-f7ae771a00d0@ca91e"
+      ]
+    }
+  }
+}

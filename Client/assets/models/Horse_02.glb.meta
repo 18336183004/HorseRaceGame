@@ -1,0 +1,93 @@
+{
+  "ver": "2.3.14",
+  "importer": "gltf",
+  "imported": true,
+  "uuid": "538a9b8a-03ce-49bd-9539-b1cb127ee549",
+  "files": [],
+  "subMetas": {
+    "76335": {
+      "importer": "gltf-mesh",
+      "uuid": "538a9b8a-03ce-49bd-9539-b1cb127ee549@76335",
+      "displayName": "",
+      "id": "76335",
+      "name": "Horse_02_Mesh.mesh",
+      "userData": {
+        "gltfIndex": 0,
+        "triangleCount": 276
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "97e49": {
+      "importer": "gltf-material",
+      "uuid": "538a9b8a-03ce-49bd-9539-b1cb127ee549@97e49",
+      "displayName": "",
+      "id": "97e49",
+      "name": "Horse_02_Material.material",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "07a42": {
+      "importer": "gltf-scene",
+      "uuid": "538a9b8a-03ce-49bd-9539-b1cb127ee549@07a42",
+      "displayName": "",
+      "id": "07a42",
+      "name": "Horse_02.prefab",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "imageMetas": [],
+    "lods": {
+      "enable": false,
+      "hasBuiltinLOD": false,
+      "options": [
+        {
+          "screenRatio": 0.25,
+          "faceCount": 1
+        },
+        {
+          "screenRatio": 0.125,
+          "faceCount": 0.25
+        },
+        {
+          "screenRatio": 0.01,
+          "faceCount": 0.1
+        }
+      ]
+    },
+    "assetFinder": {
+      "meshes": [
+        "538a9b8a-03ce-49bd-9539-b1cb127ee549@76335"
+      ],
+      "skeletons": [],
+      "textures": [],
+      "materials": [
+        "538a9b8a-03ce-49bd-9539-b1cb127ee549@97e49"
+      ],
+      "scenes": [
+        "538a9b8a-03ce-49bd-9539-b1cb127ee549@07a42"
+      ]
+    }
+  }
+}

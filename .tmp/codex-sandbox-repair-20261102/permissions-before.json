@@ -1,0 +1,8 @@
+{
+  "target": "C:\\Users\\Administrator\\.codex\\.sandbox-bin",
+  "ownerSid": "S-1-5-32-544",
+  "sddl": "O:BAG:S-1-5-21-2472275971-2834174559-270362074-513D:PAI(A;OICI;0x1301bf;;;SY)(A;OICI;0x1301bf;;;BA)(A;OICI;0x1301bf;;;LA)(A;OICI;0x1200a9;;;S-1-5-21-2472275971-2834174559-270362074-1000)",
+  "accessSddl": "D:PAI(A;OICI;0x1301bf;;;SY)(A;OICI;0x1301bf;;;BA)(A;OICI;0x1301bf;;;LA)(A;OICI;0x1200a9;;;S-1-5-21-2472275971-2834174559-270362074-1000)",
+  "accessProtected": true,
+  "capturedAt": "2026-11-02T14:04:32.0470329+08:00"
+}

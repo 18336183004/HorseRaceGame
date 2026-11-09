@@ -1,0 +1,93 @@
+{
+  "ver": "2.3.14",
+  "importer": "gltf",
+  "imported": true,
+  "uuid": "b2211eba-b2f6-4c98-a757-2041e9a3d954",
+  "files": [],
+  "subMetas": {
+    "fa607": {
+      "importer": "gltf-mesh",
+      "uuid": "b2211eba-b2f6-4c98-a757-2041e9a3d954@fa607",
+      "displayName": "",
+      "id": "fa607",
+      "name": "Horse_15_Mesh.mesh",
+      "userData": {
+        "gltfIndex": 0,
+        "triangleCount": 276
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "5eb40": {
+      "importer": "gltf-material",
+      "uuid": "b2211eba-b2f6-4c98-a757-2041e9a3d954@5eb40",
+      "displayName": "",
+      "id": "5eb40",
+      "name": "Horse_15_Material.material",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "808f6": {
+      "importer": "gltf-scene",
+      "uuid": "b2211eba-b2f6-4c98-a757-2041e9a3d954@808f6",
+      "displayName": "",
+      "id": "808f6",
+      "name": "Horse_15.prefab",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "imageMetas": [],
+    "lods": {
+      "enable": false,
+      "hasBuiltinLOD": false,
+      "options": [
+        {
+          "screenRatio": 0.25,
+          "faceCount": 1
+        },
+        {
+          "screenRatio": 0.125,
+          "faceCount": 0.25
+        },
+        {
+          "screenRatio": 0.01,
+          "faceCount": 0.1
+        }
+      ]
+    },
+    "assetFinder": {
+      "meshes": [
+        "b2211eba-b2f6-4c98-a757-2041e9a3d954@fa607"
+      ],
+      "skeletons": [],
+      "textures": [],
+      "materials": [
+        "b2211eba-b2f6-4c98-a757-2041e9a3d954@5eb40"
+      ],
+      "scenes": [
+        "b2211eba-b2f6-4c98-a757-2041e9a3d954@808f6"
+      ]
+    }
+  }
+}

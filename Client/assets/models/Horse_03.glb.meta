@@ -1,0 +1,93 @@
+{
+  "ver": "2.3.14",
+  "importer": "gltf",
+  "imported": true,
+  "uuid": "9a45f182-5b15-4718-8ea3-8be078c7c7a0",
+  "files": [],
+  "subMetas": {
+    "a2471": {
+      "importer": "gltf-mesh",
+      "uuid": "9a45f182-5b15-4718-8ea3-8be078c7c7a0@a2471",
+      "displayName": "",
+      "id": "a2471",
+      "name": "Horse_03_Mesh.mesh",
+      "userData": {
+        "gltfIndex": 0,
+        "triangleCount": 276
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "02ff7": {
+      "importer": "gltf-material",
+      "uuid": "9a45f182-5b15-4718-8ea3-8be078c7c7a0@02ff7",
+      "displayName": "",
+      "id": "02ff7",
+      "name": "Horse_03_Material.material",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "d762a": {
+      "importer": "gltf-scene",
+      "uuid": "9a45f182-5b15-4718-8ea3-8be078c7c7a0@d762a",
+      "displayName": "",
+      "id": "d762a",
+      "name": "Horse_03.prefab",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "imageMetas": [],
+    "lods": {
+      "enable": false,
+      "hasBuiltinLOD": false,
+      "options": [
+        {
+          "screenRatio": 0.25,
+          "faceCount": 1
+        },
+        {
+          "screenRatio": 0.125,
+          "faceCount": 0.25
+        },
+        {
+          "screenRatio": 0.01,
+          "faceCount": 0.1
+        }
+      ]
+    },
+    "assetFinder": {
+      "meshes": [
+        "9a45f182-5b15-4718-8ea3-8be078c7c7a0@a2471"
+      ],
+      "skeletons": [],
+      "textures": [],
+      "materials": [
+        "9a45f182-5b15-4718-8ea3-8be078c7c7a0@02ff7"
+      ],
+      "scenes": [
+        "9a45f182-5b15-4718-8ea3-8be078c7c7a0@d762a"
+      ]
+    }
+  }
+}

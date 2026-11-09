@@ -1,0 +1,93 @@
+{
+  "ver": "2.3.14",
+  "importer": "gltf",
+  "imported": true,
+  "uuid": "7f7194dc-69ed-487f-bf07-4d91d024e9dc",
+  "files": [],
+  "subMetas": {
+    "7e154": {
+      "importer": "gltf-mesh",
+      "uuid": "7f7194dc-69ed-487f-bf07-4d91d024e9dc@7e154",
+      "displayName": "",
+      "id": "7e154",
+      "name": "Horse_16_Mesh.mesh",
+      "userData": {
+        "gltfIndex": 0,
+        "triangleCount": 276
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "3d863": {
+      "importer": "gltf-material",
+      "uuid": "7f7194dc-69ed-487f-bf07-4d91d024e9dc@3d863",
+      "displayName": "",
+      "id": "3d863",
+      "name": "Horse_16_Material.material",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "c565d": {
+      "importer": "gltf-scene",
+      "uuid": "7f7194dc-69ed-487f-bf07-4d91d024e9dc@c565d",
+      "displayName": "",
+      "id": "c565d",
+      "name": "Horse_16.prefab",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "imageMetas": [],
+    "lods": {
+      "enable": false,
+      "hasBuiltinLOD": false,
+      "options": [
+        {
+          "screenRatio": 0.25,
+          "faceCount": 1
+        },
+        {
+          "screenRatio": 0.125,
+          "faceCount": 0.25
+        },
+        {
+          "screenRatio": 0.01,
+          "faceCount": 0.1
+        }
+      ]
+    },
+    "assetFinder": {
+      "meshes": [
+        "7f7194dc-69ed-487f-bf07-4d91d024e9dc@7e154"
+      ],
+      "skeletons": [],
+      "textures": [],
+      "materials": [
+        "7f7194dc-69ed-487f-bf07-4d91d024e9dc@3d863"
+      ],
+      "scenes": [
+        "7f7194dc-69ed-487f-bf07-4d91d024e9dc@c565d"
+      ]
+    }
+  }
+}

@@ -238,18 +238,26 @@ app.UseCors();
 
 // 静态贴图与美术资源直通（供 Cocos 预览与客户端 100% 稳定加载 2D 原画、三视图与序列帧动画）
 var clientTexturesPath = Path.GetFullPath(Path.Combine(builder.Environment.ContentRootPath, "..", "..", "Client", "assets", "textures"));
+Action<Microsoft.AspNetCore.StaticFiles.StaticFileResponseContext> setStaticCors = ctx =>
+{
+    ctx.Context.Response.Headers.Append("Access-Control-Allow-Origin", "*");
+    ctx.Context.Response.Headers.Append("Access-Control-Allow-Methods", "GET, OPTIONS");
+    ctx.Context.Response.Headers.Append("Access-Control-Allow-Headers", "*");
+};
 if (Directory.Exists(clientTexturesPath))
 {
     var textureProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(clientTexturesPath);
     app.UseStaticFiles(new StaticFileOptions
     {
         FileProvider = textureProvider,
-        RequestPath = "/textures"
+        RequestPath = "/textures",
+        OnPrepareResponse = setStaticCors
     });
     app.UseStaticFiles(new StaticFileOptions
     {
         FileProvider = textureProvider,
-        RequestPath = "/assets/textures"
+        RequestPath = "/assets/textures",
+        OnPrepareResponse = setStaticCors
     });
 }
 var clientAssetsPath = Path.GetFullPath(Path.Combine(builder.Environment.ContentRootPath, "..", "..", "Client", "assets"));
@@ -258,7 +266,8 @@ if (Directory.Exists(clientAssetsPath))
     app.UseStaticFiles(new StaticFileOptions
     {
         FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(clientAssetsPath),
-        RequestPath = "/assets"
+        RequestPath = "/assets",
+        OnPrepareResponse = setStaticCors
     });
 }
 

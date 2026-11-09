@@ -4,6 +4,7 @@ import { HorseSprites } from "./HorseSprites";
 import { WestColors } from "./WestTheme";
 import { WestAudio } from "./WestAudio";
 import { WestHaptics } from "./WestHaptics";
+import { WestTypography } from "./WestTypography";
 
 const { ccclass, property } = _decorator;
 
@@ -16,6 +17,24 @@ export interface HorseActionDefinition {
     description: string;
     isLoop: boolean;
     duration: number;
+}
+
+/** 模块化解剖铰接骨骼姿态数据 (Articulated Procedural Rig Pose) */
+export interface ArticulatedRigPose {
+    bodyY: number;
+    bodyRot: number;
+    neckRot: number;
+    headRot: number;
+    jawOpen: number;
+    earAngle: number;
+    foreNearShoulder: number;
+    foreNearKnee: number;
+    foreFarShoulder: number;
+    foreFarKnee: number;
+    hindNearHip: number;
+    hindNearHock: number;
+    hindFarHip: number;
+    hindFarHock: number;
 }
 
 /**
@@ -43,6 +62,20 @@ export class HorseVisual2D extends Component {
     private shadowG: Graphics | null = null;
     private saddleNode: Node | null = null;
     private saddleG: Graphics | null = null;
+
+    // 模块化解剖铰接骨骼系统 (Articulated Procedural Anatomical Rig)
+    private rigNode: Node | null = null;
+    private rigG: Graphics | null = null;
+    private currentRigPose: ArticulatedRigPose = {
+        bodyY: 0, bodyRot: 0, neckRot: 0, headRot: 0, jawOpen: 0, earAngle: 0,
+        foreNearShoulder: 0, foreNearKnee: 0, foreFarShoulder: 0, foreFarKnee: 0,
+        hindNearHip: 0, hindNearHock: 0, hindFarHip: 0, hindFarHock: 0,
+    };
+    private targetRigPose: ArticulatedRigPose = {
+        bodyY: 0, bodyRot: 0, neckRot: 0, headRot: 0, jawOpen: 0, earAngle: 0,
+        foreNearShoulder: 0, foreNearKnee: 0, foreFarShoulder: 0, foreFarKnee: 0,
+        hindNearHip: 0, hindNearHock: 0, hindFarHip: 0, hindFarHock: 0,
+    };
     private horseG: Graphics | null = null;
     private spriteNode: Node | null = null;
     private speedLinesNode: Node | null = null;
@@ -73,6 +106,13 @@ export class HorseVisual2D extends Component {
     private breathTimer: number = 0;
     private readonly breathPuffs: Array<{ x: number; y: number; vx: number; vy: number; r: number; alpha: number; life: number; maxLife: number }> = [];
     private readonly breathPool: Array<{ x: number; y: number; vx: number; vy: number; r: number; alpha: number; life: number; maxLife: number }> = [];
+
+    // 并驾齐驱激烈对抗摩擦电光火花系统 (Head-to-Head Duel Clash Sparks)
+    private isDueling: boolean = false;
+    private duelNode: Node | null = null;
+    private duelG: Graphics | null = null;
+    private readonly duelSparks: Array<{ x: number; y: number; vx: number; vy: number; r: number; alpha: number; life: number; maxLife: number; color: Color }> = [];
+    private readonly duelSparkPool: Array<{ x: number; y: number; vx: number; vy: number; r: number; alpha: number; life: number; maxLife: number; color: Color }> = [];
 
     // 奔跑鬃毛迎风飘扬飞舞节点 (Wind-Whipped Mane Flutter)
     private maneNode: Node | null = null;
@@ -115,10 +155,10 @@ export class HorseVisual2D extends Component {
         Stand: { id: "Stand", nameZh: "站立", nameEn: "Stand", category: "Daily", icon: "🐴", description: "静止站立，伴随胸腔轻柔呼吸", isLoop: true, duration: 999 },
         Lie_Down: { id: "Lie_Down", nameZh: "卧倒", nameEn: "Lie down", category: "Daily", icon: "💤", description: "折腿俯身贴地休息", isLoop: true, duration: 3.5 },
         Roll: { id: "Roll", nameZh: "打滚", nameEn: "Roll", category: "Daily", icon: "🔄", description: "躺下左右翻滚放松摩擦", isLoop: false, duration: 3.0 },
-        Graze: { id: "Graze", nameZh: "吃草", nameEn: "Graze", category: "Daily", icon: "🌾", description: "低头前伸啃食牧草", isLoop: true, duration: 3.2 },
-        Drink: { id: "Drink", nameZh: "饮水", nameEn: "Drink", category: "Daily", icon: "💧", description: "深低头吞咽清水", isLoop: true, duration: 2.8 },
+        Graze: { id: "Graze", nameZh: "吃草", nameEn: "Graze", category: "Daily", icon: "🌾", description: "低头前伸啃食牧草", isLoop: false, duration: 3.2 },
+        Drink: { id: "Drink", nameZh: "饮水", nameEn: "Drink", category: "Daily", icon: "💧", description: "深低头吞咽清水", isLoop: false, duration: 2.8 },
         Stretch: { id: "Stretch", nameZh: "伸懒腰", nameEn: "Stretch", category: "Daily", icon: "🧘", description: "前身深俯伸展，后背反弓", isLoop: false, duration: 2.5 },
-        Rub_Scratch: { id: "Rub_Scratch", nameZh: "蹭痒", nameEn: "Rub", category: "Daily", icon: "🪵", description: "靠向围栏侧身蹭痒", isLoop: true, duration: 2.2 },
+        Rub_Scratch: { id: "Rub_Scratch", nameZh: "蹭痒", nameEn: "Rub", category: "Daily", icon: "🪵", description: "靠向围栏侧身蹭痒", isLoop: false, duration: 2.2 },
         Tail_Swish: { id: "Tail_Swish", nameZh: "甩尾", nameEn: "Tail swish", category: "Daily", icon: "🪰", description: "马尾发力左右抽甩驱虫", isLoop: false, duration: 1.8 },
         Shake: { id: "Shake", nameZh: "抖身", nameEn: "Shake", category: "Daily", icon: "💦", description: "全身波浪状剧烈抖动", isLoop: false, duration: 1.6 },
         Snort: { id: "Snort", nameZh: "喷鼻", nameEn: "Snort", category: "Daily", icon: "💨", description: "鼻孔扩大呼气警觉", isLoop: false, duration: 1.2 },
@@ -127,18 +167,18 @@ export class HorseVisual2D extends Component {
         // 三、情绪与社交类 (14 项)
         Neigh: { id: "Neigh", nameZh: "嘶鸣", nameEn: "Neigh", category: "Social", icon: "🎺", description: "仰头长声呼叫同伴", isLoop: false, duration: 2.2 },
         Snort_Alert: { id: "Snort_Alert", nameZh: "打响鼻", nameEn: "Snort Alert", category: "Social", icon: "👃", description: "短促喷气，双耳直竖警觉", isLoop: false, duration: 1.5 },
-        Paw: { id: "Paw", nameZh: "刨地", nameEn: "Paw", category: "Social", icon: "🐾", description: "单前蹄节律性刮踏地面", isLoop: true, duration: 2.4 },
+        Paw: { id: "Paw", nameZh: "刨地", nameEn: "Paw", category: "Social", icon: "🐾", description: "单前蹄节律性刮踏地面", isLoop: false, duration: 2.4 },
         Stamp: { id: "Stamp", nameZh: "跺脚", nameEn: "Stamp", category: "Social", icon: "💥", description: "用力重踏地面表达烦躁", isLoop: false, duration: 1.5 },
         Head_Toss: { id: "Head_Toss", nameZh: "甩头", nameEn: "Head toss", category: "Social", icon: "🙆", description: "头部上下甩动翻飞鬃毛", isLoop: false, duration: 1.8 },
-        Ears_Pinned: { id: "Ears_Pinned", nameZh: "耳朵后贴", nameEn: "Ears pinned", category: "Social", icon: "😠", description: "愤怒威吓，防御紧绷", isLoop: true, duration: 2.0 },
-        Ears_Forward: { id: "Ears_Forward", nameZh: "耳朵前转", nameEn: "Ears forward", category: "Social", icon: "👀", description: "双耳朝前集中，好奇机敏", isLoop: true, duration: 2.0 },
+        Ears_Pinned: { id: "Ears_Pinned", nameZh: "耳朵后贴", nameEn: "Ears pinned", category: "Social", icon: "😠", description: "愤怒威吓，防御紧绷", isLoop: false, duration: 2.0 },
+        Ears_Forward: { id: "Ears_Forward", nameZh: "耳朵前转", nameEn: "Ears forward", category: "Social", icon: "👀", description: "双耳朝前集中，好奇机敏", isLoop: false, duration: 2.0 },
         Baring_Teeth: { id: "Baring_Teeth", nameZh: "龇牙", nameEn: "Baring teeth", category: "Social", icon: "😬", description: "翻唇露齿威胁试探", isLoop: false, duration: 1.6 },
         Kick: { id: "Kick", nameZh: "踢", nameEn: "Kick", category: "Social", icon: "🥋", description: "后肢向后上方猛力踹击", isLoop: false, duration: 1.6 },
         Buck: { id: "Buck", nameZh: "尥蹶子", nameEn: "Buck", category: "Social", icon: "🤸", description: "双后肢腾空踢起，前体弯弓", isLoop: false, duration: 2.2 },
         Rear: { id: "Rear", nameZh: "起扬", nameEn: "Rear", category: "Social", icon: "⚡", description: "前肢腾空高扬，双后肢立起", isLoop: false, duration: 2.5 },
         Bite: { id: "Bite", nameZh: "咬", nameEn: "Bite", category: "Social", icon: "🦷", description: "探颈快速开合嘴部试探", isLoop: false, duration: 1.4 },
-        Grooming: { id: "Grooming", nameZh: "互相理毛", nameEn: "Grooming", category: "Social", icon: "🤝", description: "侧首轻柔啃咬增进社交", isLoop: true, duration: 2.5 },
-        Maternal_Guard: { id: "Maternal_Guard", nameZh: "母马护驹", nameEn: "Guard", category: "Social", icon: "🛡️", description: "横向遮挡守护身侧幼驹", isLoop: true, duration: 2.5 },
+        Grooming: { id: "Grooming", nameZh: "互相理毛", nameEn: "Grooming", category: "Social", icon: "🤝", description: "侧首轻柔啃咬增进社交", isLoop: false, duration: 2.5 },
+        Maternal_Guard: { id: "Maternal_Guard", nameZh: "母马护驹", nameEn: "Guard", category: "Social", icon: "🛡️", description: "横向遮挡守护身侧幼驹", isLoop: false, duration: 2.5 },
 
         // 四、骑乘与竞技类 (11 项)
         Start: { id: "Start", nameZh: "起跑", nameEn: "Start", category: "Racing", icon: "🚦", description: "低重心爆发蹬地冲出", isLoop: false, duration: 1.5 },
@@ -152,6 +192,11 @@ export class HorseVisual2D extends Component {
         Lead_Change: { id: "Lead_Change", nameZh: "换腿", nameEn: "Lead change", category: "Racing", icon: "👟", description: "腾空期切换领先肢", isLoop: false, duration: 1.2 },
         Collection_Extension: { id: "Collection_Extension", nameZh: "收缩/伸长", nameEn: "Stretch Pace", category: "Racing", icon: "📏", description: "步频步幅紧密拉伸调节", isLoop: true, duration: 1.6 },
         Spook: { id: "Spook", nameZh: "受惊", nameEn: "Spook", category: "Racing", icon: "😱", description: "突然受惊急停侧闪颤栗", isLoop: false, duration: 1.8 },
+
+        // 五、幼驹萌趣与成长专属类 (3 项)
+        Foal_Hop: { id: "Foal_Hop", nameZh: "幼驹欢跳", nameEn: "Foal Hop", category: "Daily", icon: "🐾", description: "四肢长腿轻盈腾跃小跳", isLoop: true, duration: 1.2 },
+        Foal_Nuzzle: { id: "Foal_Nuzzle", nameZh: "亲昵蹭头", nameEn: "Foal Nuzzle", category: "Social", icon: "🥰", description: "向母马或骑手探头亲昵磨蹭", isLoop: false, duration: 2.0 },
+        Foal_Frolic: { id: "Foal_Frolic", nameZh: "撒欢追逐", nameEn: "Foal Frolic", category: "Daily", icon: "✨", description: "轻快绕圈奔跃撒欢", isLoop: true, duration: 1.5 },
     };
 
     onLoad() {
@@ -168,6 +213,17 @@ export class HorseVisual2D extends Component {
         this.ghostHistory.length = 0;
         this.ghostNodes.length = 0;
         this.ghostSprites.length = 0;
+        this.duelSparks.length = 0;
+        this.duelSparkPool.length = 0;
+    }
+
+    /** 设置并驾齐驱激烈死斗状态 */
+    public setDueling(dueling: boolean): void {
+        this.isDueling = dueling;
+    }
+
+    public getDueling(): boolean {
+        return this.isDueling;
     }
 
     private lastPetTime: number = 0;
@@ -252,16 +308,20 @@ export class HorseVisual2D extends Component {
         this.loadRunningSprite();
     }
 
-    /** 初始化或重置幼驹展示 (编号 1-20, 成长阶段 1-4) */
-    public setFoalStage(foalNo: number, stage: FoalGrowthStage) {
+    /** 初始化或重置幼驹展示 (支持单参数 stage 或双参数 foalNo, stage) */
+    public setFoalStage(stageOrNo: number | FoalGrowthStage, stage?: FoalGrowthStage) {
         this.isFoal = true;
-        this.horseNo = Math.max(1, Math.min(20, foalNo));
-        this.foalStage = stage;
+        if (stage !== undefined) {
+            this.horseNo = Math.max(1, Math.min(20, stageOrNo as number));
+            this.foalStage = stage;
+        } else {
+            this.foalStage = stageOrNo as FoalGrowthStage;
+        }
         if (this.jockeyNode) {
-            this.jockeyNode.active = stage === FoalGrowthStage.RacingPro && !this.isPaddockMode;
+            this.jockeyNode.active = this.foalStage === FoalGrowthStage.RacingPro && !this.isPaddockMode;
         }
         if (this.saddleNode) {
-            this.saddleNode.active = stage === FoalGrowthStage.RacingPro;
+            this.saddleNode.active = this.foalStage === FoalGrowthStage.RacingPro;
         }
 
         // 依据成长阶段缩放尺寸
@@ -272,9 +332,9 @@ export class HorseVisual2D extends Component {
         else if (stage === FoalGrowthStage.RacingPro) stageScale = 1.05;
         this.setDisplayScale(stageScale);
 
-        // 载入幼驹对应阶段精灵
+        // 载入纯透明赛马精灵 (杜绝静态方块图纸与照片遮挡)
         if (this.spriteNode && this.spriteNode.isValid) {
-            HorseSprites.applyFoalStage(this.spriteNode, stage, this.horseNo, (sf) => {
+            HorseSprites.applyHorseRunningSprite(this.spriteNode, this.horseNo, (sf: SpriteFrame) => {
                 if (!this.isValid || !this.spriteNode || !this.spriteNode.isValid) return;
                 this.isSpriteLoaded = true;
                 this.staticSpriteFrame = sf;
@@ -283,11 +343,14 @@ export class HorseVisual2D extends Component {
                 sp.spriteFrame = sf;
                 const ut = this.spriteNode.getComponent(UITransform);
                 if (ut) {
-                    ut.setContentSize(56, 46);
+                    ut.setContentSize(102, 76);
                 }
                 if (this.horseG) this.horseG.clear();
             });
         }
+        this.renderRealisticHorseSilhouette();
+        this.renderSaddleCloth();
+        this.drawProceduralTail();
         this.updateBubble();
     }
 
@@ -311,7 +374,6 @@ export class HorseVisual2D extends Component {
         }
     }
 
-    /** 建立可视化节点树结构 */
     /** 建立可视化节点树结构 */
     private setupVisualNodes() {
         // 1. 地面投射阴影节点 (独立于马体上下起伏，贴地投影)
@@ -361,6 +423,14 @@ export class HorseVisual2D extends Component {
         this.tailG = this.tailNode.addComponent(Graphics);
         this.drawProceduralTail();
 
+        // 2C. 模块化解剖铰接骨骼系统节点 (Articulated Procedural Anatomical Rig)
+        this.rigNode = new Node("ArticulatedRig");
+        this.rigNode.layer = this.node.layer;
+        this.horseBodyNode.addChild(this.rigNode);
+        this.rigNode.setPosition(0, 0, 0);
+        this.rigG = this.rigNode.addComponent(Graphics);
+        this.rigNode.active = false;
+
         // 3. 真实概念图透明精灵节点 (向右奔跑高精油画精灵)
         this.spriteNode = new Node("HorseSprite");
         this.spriteNode.layer = this.node.layer;
@@ -401,6 +471,13 @@ export class HorseVisual2D extends Component {
         this.maneNode.setPosition(14, 18, 0);
         this.maneG = this.maneNode.addComponent(Graphics);
 
+        // 3F. 两马并驾齐驱激烈对抗摩擦电光火花节点 (Duel Clash Friction Sparks)
+        this.duelNode = new Node("DuelClashSparks");
+        this.duelNode.layer = this.node.layer;
+        this.horseBodyNode.addChild(this.duelNode);
+        this.duelNode.setPosition(0, 0, 0);
+        this.duelG = this.duelNode.addComponent(Graphics);
+
         // 4. 竞技专属鞍布与马号节点 (紧贴马背)
         this.saddleNode = new Node("SaddleCloth");
         this.saddleNode.layer = this.node.layer;
@@ -414,7 +491,7 @@ export class HorseVisual2D extends Component {
         this.bubbleNode.layer = this.node.layer;
         this.node.addChild(this.bubbleNode);
         this.bubbleNode.setPosition(0, 48, 0);
-        this.bubbleNode.addComponent(UITransform).setContentSize(120, 24);
+        this.bubbleNode.addComponent(UITransform).setContentSize(130, 26);
         this.bubbleG = this.bubbleNode.addComponent(Graphics);
         this.bubbleNode.active = this.isPaddockMode;
 
@@ -422,11 +499,13 @@ export class HorseVisual2D extends Component {
         lblNode.layer = this.node.layer;
         this.bubbleNode.addChild(lblNode);
         this.bubbleLabel = lblNode.addComponent(Label);
-        this.bubbleLabel.fontSize = 11;
-        this.bubbleLabel.lineHeight = 15;
+        this.bubbleLabel.fontFamily = WestTypography.FONT_FAMILY;
+        this.bubbleLabel.fontSize = 12.5;
+        this.bubbleLabel.lineHeight = 16;
+        this.bubbleLabel.spacingX = 0.3;
+        this.bubbleLabel.isBold = true;
         this.bubbleLabel.color = WestColors.INK_DARK;
 
-        this.renderRealisticHorseSilhouette();
         this.renderSaddleCloth();
         this.renderAeroJockey(false);
         this.loadRunningSprite();
@@ -467,7 +546,7 @@ export class HorseVisual2D extends Component {
         this.jockeyG.fill();
 
         // 彩衣前胸烫金/白色 V 型徽章或条纹装饰 (Silk Sash Stripe)
-        this.jockeyG.strokeColor = new Color(255, 245, 210, 230);
+        this.jockeyG.strokeColor = HorseVisual2D._tempJockeySash;
         this.jockeyG.lineWidth = 1.6;
         this.jockeyG.moveTo(0, 7);
         this.jockeyG.lineTo(13, 11.5);
@@ -488,7 +567,7 @@ export class HorseVisual2D extends Component {
         this.jockeyG.fill();
 
         // 皮革缰绳 (Leather Reins)
-        this.jockeyG.strokeColor = new Color(62, 38, 22, 220);
+        this.jockeyG.strokeColor = HorseVisual2D._tempJockeyReins;
         this.jockeyG.lineWidth = 1.2;
         this.jockeyG.moveTo(18, 6);
         this.jockeyG.lineTo(28, 8);
@@ -503,15 +582,15 @@ export class HorseVisual2D extends Component {
         this.jockeyG.fill();
 
         // 头盔前缘帽檐 (Visor)
-        this.jockeyG.fillColor = new Color(20, 20, 25, 240);
+        this.jockeyG.fillColor = HorseVisual2D._tempJockeyVisor;
         this.jockeyG.roundRect(headX + 1, headY - 1, 5, 2.2, 0.8);
         this.jockeyG.fill();
 
         // 防风护目镜 (Reflective Racing Goggles)
-        this.jockeyG.fillColor = new Color(255, 220, 80, 240);
+        this.jockeyG.fillColor = HorseVisual2D._tempJockeyGoggles;
         this.jockeyG.roundRect(headX + 0.5, headY - 0.5, 4.2, 3, 1.2);
         this.jockeyG.fill();
-        this.jockeyG.strokeColor = new Color(30, 30, 30, 200);
+        this.jockeyG.strokeColor = HorseVisual2D._tempJockeyGogglesRim;
         this.jockeyG.lineWidth = 0.8;
         this.jockeyG.roundRect(headX + 0.5, headY - 0.5, 4.2, 3, 1.2);
         this.jockeyG.stroke();
@@ -519,13 +598,24 @@ export class HorseVisual2D extends Component {
         // 6. 冲刺绝杀鞭策手势 (Jockey Whip)
         if (isSprinting) {
             const whipAngle = Math.sin(whipPhase) * 25;
-            this.jockeyG.strokeColor = new Color(35, 25, 20, 240);
+            this.jockeyG.strokeColor = HorseVisual2D._tempJockeyWhip;
             this.jockeyG.lineWidth = 1.4;
             this.jockeyG.moveTo(18, 6);
             const whipEndX = 18 - 14 * Math.cos((whipAngle * Math.PI) / 180);
             const whipEndY = 6 + 14 * Math.sin((whipAngle * Math.PI) / 180);
             this.jockeyG.lineTo(whipEndX, whipEndY);
             this.jockeyG.stroke();
+
+            // 鞭梢极速破空音爆气浪微圆环与金光火花 (Whip Air Snap Shockwave)
+            if (whipAngle < -18) {
+                this.jockeyG.strokeColor = HorseVisual2D._tempJockeySnapRing;
+                this.jockeyG.lineWidth = 1.4;
+                this.jockeyG.circle(whipEndX, whipEndY, 3.8);
+                this.jockeyG.stroke();
+                this.jockeyG.fillColor = HorseVisual2D._tempJockeySnapCore;
+                this.jockeyG.circle(whipEndX, whipEndY, 1.6);
+                this.jockeyG.fill();
+            }
         }
     }
 
@@ -555,6 +645,16 @@ export class HorseVisual2D extends Component {
             }
         });
 
+        // 载入当前马匹 8 帧标准奔跑序列图集 (1024x128) 与骑师专属彩衣图集 (1024x128)
+        HorseSprites.loadHorseGallopAnimation(this.horseNo, (hFrames, jFrames) => {
+            if (!this.isValid) return;
+            if (hFrames && hFrames.length > 0) {
+                this.gallopHorseFrames = hFrames;
+                this.gallopJockeyFrames = jFrames;
+                this.isGallopAnimationLoaded = true;
+            }
+        });
+
         // 激活专业鞍布与高精职业骑师
         if (this.saddleNode) {
             this.saddleNode.active = true;
@@ -574,6 +674,18 @@ export class HorseVisual2D extends Component {
         const sH = Math.max(3.5, 7 * this.viewScale);
         this.shadowG.ellipse(2, 0, sW, sH);
         this.shadowG.fill();
+
+        // 闸位待机刨地动作 (Paw) 时，在前蹄处激荡真实泥沙微尘
+        if (this.currentAction === "Paw") {
+            const pawPhase = (this.animTime * 9.0) % (Math.PI * 2);
+            if (pawPhase > 0.8 && pawPhase < 3.2) {
+                const pawDustAlpha = Math.floor(65 * Math.sin(pawPhase - 0.8));
+                this.shadowG.fillColor = new Color(165, 125, 80, pawDustAlpha);
+                this.shadowG.circle(18 * this.viewScale, 2, 4.5 * this.viewScale);
+                this.shadowG.circle(23 * this.viewScale, 4, 3.2 * this.viewScale);
+                this.shadowG.fill();
+            }
+        }
     }
 
     /** 绘制马背上的专业竞技鞍布与马号数字 */
@@ -644,7 +756,10 @@ export class HorseVisual2D extends Component {
 
     /** 备用写实纯血马剪影 */
     private renderRealisticHorseSilhouette() {
-        if (this.isSpriteLoaded) return;
+        if (this.isSpriteLoaded || (this.rigNode && this.rigNode.active)) {
+            if (this.horseG) this.horseG.clear();
+            return;
+        }
         const g = this.horseG;
         if (!g) return;
         g.clear();
@@ -765,7 +880,7 @@ export class HorseVisual2D extends Component {
         this.animTime += effectiveDt;
         this.actionTimer += effectiveDt;
 
-        // 牧场待机自动行为循环演化 (Auto Paddock Idle Cycle)
+        // 牧场/马房待机自动行为循环演化 (Auto Paddock Idle Cycle)
         if (this.isPaddockMode && this.isActionLoop && this.currentAction === "Stand") {
             this.idleCycleTimer += dt;
             if (this.idleCycleTimer >= this.nextIdleCycleInterval) {
@@ -773,6 +888,18 @@ export class HorseVisual2D extends Component {
                 this.nextIdleCycleInterval = 5.0 + Math.random() * 4.0;
                 const naturalPool = ["Graze", "Tail_Swish", "Stretch", "Ears_Forward", "Paw", "Neigh", "Drink", "Snort"];
                 const pick = naturalPool[Math.floor(Math.random() * naturalPool.length)];
+                this.setAction(pick, 1.0);
+            }
+        }
+
+        // 赛道闸位待机自动小动作循环 (Race Gate Idle Cycle: 打响鼻/刨地/甩头/甩尾/机警立姿)
+        if (!this.isPaddockMode && this.isActionLoop && this.currentAction === "Stand") {
+            this.idleCycleTimer += dt;
+            if (this.idleCycleTimer >= this.nextIdleCycleInterval) {
+                this.idleCycleTimer = 0;
+                this.nextIdleCycleInterval = 3.2 + (this.horseNo % 3) * 0.8 + Math.random() * 2.5;
+                const gatePool = ["Paw", "Tail_Swish", "Snort_Alert", "Head_Toss", "Ears_Forward"];
+                const pick = gatePool[Math.floor(Math.random() * gatePool.length)];
                 this.setAction(pick, 1.0);
             }
         }
@@ -785,39 +912,130 @@ export class HorseVisual2D extends Component {
         // 计算当前动作的 2D 动力学位姿
         const pose = this.computeActionPose(this.currentAction, this.animTime);
 
-        // 确保马体始终呈现高精写实油画精灵
-        if (this.staticSpriteFrame && this.spriteNode) {
-            const sp = this.spriteNode.getComponent(Sprite);
-            if (sp && sp.spriteFrame !== this.staticSpriteFrame) {
-                sp.spriteFrame = this.staticSpriteFrame;
-            }
-        }
-
         // 冲刺与并驾齐驱状态判断
         const isSprinting = this.currentAction === "Sprint" || this.currentAction === "Head_To_Head";
-        const isGalloping = isSprinting || this.currentAction === "Gallop" || this.currentAction === "Accelerate";
+        const isGalloping = isSprinting || this.currentAction === "Gallop" || this.currentAction === "Accelerate" || this.currentAction === "Start" || this.currentAction === "Finish";
 
-        // 驱动职业写实骑师动力学位姿、挥鞭与俯身推骑
-        if (this.jockeyNode) {
-            this.jockeyNode.active = !this.isPaddockMode && !this.isFoal;
-            if (isSprinting) {
-                const whipSway = Math.sin(this.animTime * 22) * 1.8;
-                this.jockeyNode.setPosition(4 + whipSway * 0.5, 14 - Math.abs(whipSway) * 0.4, 0);
-                this.jockeyNode.setRotationFromEuler(0, 0, -9 + whipSway * 4.0);
-                this.renderAeroJockey(true, this.animTime * 22);
-            } else if (this.currentAction === "Head_To_Head") {
-                const duelLean = Math.sin(this.animTime * 19) * 2.0;
-                this.jockeyNode.setPosition(4.5 + duelLean * 0.4, 14.5 - duelLean * 0.3, 0);
-                this.jockeyNode.setRotationFromEuler(0, 0, -8 + duelLean * 3.5);
-                this.renderAeroJockey(true, this.animTime * 19);
-            } else if (this.currentAction === "Accelerate" || this.currentAction === "Gallop") {
-                this.jockeyNode.setPosition(2, 15, 0);
-                this.jockeyNode.setRotationFromEuler(0, 0, -4.5);
-                this.renderAeroJockey(false, 0);
-            } else {
-                this.jockeyNode.setPosition(0, 16, 0);
-                this.jockeyNode.setRotationFromEuler(0, 0, 0);
-                this.renderAeroJockey(false, 0);
+        // 判断是否使用生动解剖铰接骨骼系统 (Articulated Procedural Rig)
+        // 规则：
+        // 1. 在牧场/马房/大舞台模式 (isPaddockMode) 或幼驹模式 (isFoal) 下，除 Gallop 动作可选用 8 帧图集外，所有其它动作 (Stand, Walk, Trot, Canter, Graze, Rear, Buck, Stretch, Paw, Neigh, Foal actions 等) 100% 启用生动解剖铰接骨骼系统！
+        // 2. 在普通赛道闸位待机 (Stand, Paw, Snort_Alert) 时，亦启用解剖骨骼生动微动作！
+        const shouldUseRig = (this.isPaddockMode && (this.currentAction !== "Gallop" || this.gallopHorseFrames.length === 0)) ||
+                             (this.isFoal && (this.currentAction !== "Gallop" || this.gallopHorseFrames.length === 0)) ||
+                             (!this.isPaddockMode && (this.currentAction === "Stand" || this.currentAction === "Paw" || this.currentAction === "Snort_Alert"));
+
+        if (shouldUseRig) {
+            if (this.spriteNode && this.spriteNode.isValid) {
+                this.spriteNode.active = false;
+            }
+            if (this.horseG) {
+                this.horseG.clear();
+            }
+            if (this.rigNode && this.rigNode.isValid) {
+                this.rigNode.active = true;
+                this.updateRigPose(effectiveDt);
+                this.renderArticulatedRig(this.currentRigPose);
+            }
+            if (this.jockeyNode && this.jockeyNode.isValid) {
+                this.jockeyNode.active = false;
+            }
+            if (this.saddleNode && this.saddleNode.isValid) {
+                this.saddleNode.active = false;
+            }
+        } else if (isGalloping && this.gallopHorseFrames.length > 0) {
+            if (this.rigNode && this.rigNode.isValid) {
+                this.rigNode.active = false;
+            }
+            if (this.horseG) {
+                this.horseG.clear();
+            }
+            if (this.spriteNode && this.spriteNode.isValid) {
+                this.spriteNode.active = true;
+            }
+            if (this.saddleNode && this.saddleNode.isValid) {
+                this.saddleNode.active = true;
+            }
+
+            // 根据奔跑状态与速度因子动态换算步频 (12 ~ 24 FPS)
+            const baseFps = isSprinting ? 22 : (this.currentAction === "Accelerate" ? 18 : (this.currentAction === "Finish" ? 17 : 15));
+            const targetFps = Math.max(8, baseFps * this.speedFactor);
+            const frameInterval = 1.0 / targetFps;
+
+            this.frameTimer += effectiveDt;
+            if (this.frameTimer >= frameInterval) {
+                const step = Math.floor(this.frameTimer / frameInterval);
+                this.frameTimer %= frameInterval;
+                this.currentFrameIndex = (this.currentFrameIndex + step) % this.gallopHorseFrames.length;
+            }
+
+            if (this.spriteNode && this.spriteNode.isValid) {
+                const sp = this.spriteNode.getComponent(Sprite);
+                if (sp) {
+                    const frame = this.gallopHorseFrames[this.currentFrameIndex];
+                    if (frame && frame.isValid && frame.texture) {
+                        sp.spriteFrame = frame;
+                    }
+                }
+            }
+
+            // 同步驱动职业写实骑师 8 帧彩衣序列
+            if (this.jockeyNode && this.jockeyNode.isValid) {
+                this.jockeyNode.active = !this.isPaddockMode && !this.isFoal;
+                if (this.jockeySprite && this.gallopJockeyFrames.length > 0) {
+                    const jFrame = this.gallopJockeyFrames[this.currentFrameIndex];
+                    if (jFrame && jFrame.isValid && jFrame.texture) {
+                        this.jockeySprite.spriteFrame = jFrame;
+                        this.jockeyNode.setPosition(0, 8, 0);
+                        const jUt = this.jockeyNode.getComponent(UITransform);
+                        if (jUt) jUt.setContentSize(102, 76);
+                        if (this.jockeyG) this.jockeyG.clear();
+                    }
+                } else {
+                    // 无骑师贴图时降级使用矢量写实骑师俯身推骑
+                    this.jockeyNode.setPosition(isSprinting ? 4 : 2, 14.5, 0);
+                    this.renderAeroJockey(isSprinting, this.animTime * 22);
+                }
+            }
+        } else {
+            // 待机、慢步、快步或日常非奔跑动作（备用回退分支）：
+            if (this.spriteNode && this.spriteNode.isValid) {
+                this.spriteNode.active = true;
+                const sp = this.spriteNode.getComponent(Sprite);
+                if (sp) {
+                    if (this.gallopHorseFrames && this.gallopHorseFrames.length > 0 && !this.isFoal) {
+                        const standFrame = this.gallopHorseFrames[0];
+                        if (standFrame && standFrame.isValid && standFrame.texture) {
+                            sp.spriteFrame = standFrame;
+                        }
+                    } else if (this.staticSpriteFrame && this.staticSpriteFrame.isValid && this.staticSpriteFrame.texture) {
+                        sp.spriteFrame = this.staticSpriteFrame;
+                    }
+                }
+            }
+            if (this.horseG) {
+                this.horseG.clear();
+            }
+            if (this.rigNode && this.rigNode.isValid) {
+                this.rigNode.active = false;
+            }
+            if (this.jockeyNode && this.jockeyNode.isValid) {
+                this.jockeyNode.active = !this.isPaddockMode && !this.isFoal;
+                if (this.jockeySprite && this.gallopJockeyFrames && this.gallopJockeyFrames.length > 0) {
+                    const jStand = this.gallopJockeyFrames[0];
+                    if (jStand && jStand.isValid && jStand.texture) {
+                        this.jockeySprite.spriteFrame = jStand;
+                        this.jockeyNode.setPosition(0, 8, 0);
+                        const jUt = this.jockeyNode.getComponent(UITransform);
+                        if (jUt) jUt.setContentSize(102, 76);
+                        if (this.jockeyG) this.jockeyG.clear();
+                    }
+                } else if (!this.isPaddockMode && !this.isFoal) {
+                    this.jockeyNode.setPosition(0, 16, 0);
+                    this.jockeyNode.setRotationFromEuler(0, 0, 0);
+                    const jUt = this.jockeyNode.getComponent(UITransform);
+                    if (jUt) jUt.setContentSize(52, 42);
+                    this.renderAeroJockey(false, 0);
+                }
             }
         }
 
@@ -837,11 +1055,15 @@ export class HorseVisual2D extends Component {
             this.tailNode.setRotationFromEuler(0, 0, this.tailAngle);
         }
 
-        // 探颈绝杀与微俯仰：在冲刺或冲线瞬间，马头与身体前倾向前推进伸展 (Neck Reach)
+        // 探颈绝杀与微俯仰：在冲刺或冲线瞬间，马头与身体前倾向前推进伸展 (Neck Reach / Photo Finish Lunge)
         let thrustX = 0;
         let thrustY = 0;
-        if (isSprinting || this.currentAction === "Finish") {
-            thrustX = 4.5 + Math.sin(this.animTime * 18) * 2.5;
+        if (this.currentAction === "Finish") {
+            // 终点毫厘决胜：极限向前探颈 8.5px
+            thrustX = 8.5 + Math.sin(this.animTime * 20) * 2.8;
+            thrustY = -1.8;
+        } else if (isSprinting) {
+            thrustX = 4.8 + Math.sin(this.animTime * 18) * 2.2;
             thrustY = -Math.abs(Math.sin(this.animTime * 18)) * 1.2;
         }
         if (this.spriteNode && this.spriteNode.isValid) {
@@ -870,6 +1092,9 @@ export class HorseVisual2D extends Component {
 
         // 鬃毛逆风激荡飘扬流光渲染
         this.renderManeFlutter(effectiveDt, isGalloping, isSprinting);
+
+        // 并驾齐驱激烈死斗电光火花特效 (Head-to-Head Duel Clash Sparks)
+        this.updateDuelSparks(effectiveDt);
 
         // 头顶气泡随马头姿态轻微上下悬浮（仅牧场模式）
         if (this.isPaddockMode && this.bubbleNode && this.bubbleNode.isValid) {
@@ -914,6 +1139,24 @@ export class HorseVisual2D extends Component {
     }
 
     private static readonly _tempBreathColor = new Color(255, 255, 255, 255);
+    private static readonly _ghostGoldColor = new Color(255, 215, 60, 115);
+    private static readonly _ghostCrimsonColor = new Color(240, 75, 45, 65);
+    private static readonly _ghostConfigs = [
+        { histIdx: 2, offsetPx: -14, color: HorseVisual2D._ghostGoldColor },
+        { histIdx: 5, offsetPx: -26, color: HorseVisual2D._ghostCrimsonColor },
+    ];
+    private static readonly _tempManeDark = new Color(0, 0, 0, 200);
+    private static readonly _tempManeLight = new Color(0, 0, 0, 180);
+    private static readonly _tempTailDeep = new Color(0, 0, 0, 245);
+    private static readonly _tempTailHigh = new Color(0, 0, 0, 120);
+    private static readonly _tempJockeySash = new Color(255, 245, 210, 230);
+    private static readonly _tempJockeyReins = new Color(62, 38, 22, 220);
+    private static readonly _tempJockeyVisor = new Color(20, 20, 25, 240);
+    private static readonly _tempJockeyGoggles = new Color(255, 220, 80, 240);
+    private static readonly _tempJockeyGogglesRim = new Color(30, 30, 30, 200);
+    private static readonly _tempJockeyWhip = new Color(35, 25, 20, 240);
+    private static readonly _tempJockeySnapRing = new Color(255, 235, 140, 220);
+    private static readonly _tempJockeySnapCore = new Color(255, 250, 200, 230);
 
     /** 绘制极速奔跑时马匹鼻腔呼出的白汽微团 */
     private updateBreathEffect(dt: number, isSprinting: boolean) {
@@ -993,24 +1236,26 @@ export class HorseVisual2D extends Component {
             const tipY = rootY + (6 - i * 1.2) + wave;
 
             // 深色底缕发丝
-            this.maneG.strokeColor = new Color(
+            HorseVisual2D._tempManeDark.set(
                 Math.max(10, coat.r - 30),
                 Math.max(10, coat.g - 30),
                 Math.max(10, coat.b - 30),
                 200
             );
+            this.maneG.strokeColor = HorseVisual2D._tempManeDark;
             this.maneG.lineWidth = 2.2;
             this.maneG.moveTo(rootX, rootY);
             this.maneG.quadraticCurveTo(rootX - 5, rootY + 5 + wave * 0.5, tipX, tipY);
             this.maneG.stroke();
 
             // 亮色受光发丝高光
-            this.maneG.strokeColor = new Color(
+            HorseVisual2D._tempManeLight.set(
                 Math.min(255, coat.r + 35),
                 Math.min(255, coat.g + 35),
                 Math.min(255, coat.b + 35),
                 180
             );
+            this.maneG.strokeColor = HorseVisual2D._tempManeLight;
             this.maneG.lineWidth = 1.1;
             this.maneG.moveTo(rootX, rootY + 0.8);
             this.maneG.quadraticCurveTo(rootX - 4, rootY + 6 + wave * 0.5, tipX - 1, tipY + 1);
@@ -1025,12 +1270,13 @@ export class HorseVisual2D extends Component {
         const coat = this.getManeColor();
 
         // 1. 马尾深色底羽 (Deep Tail Mass)
-        this.tailG.fillColor = new Color(
+        HorseVisual2D._tempTailDeep.set(
             Math.max(10, coat.r - 25),
             Math.max(10, coat.g - 25),
             Math.max(10, coat.b - 25),
             245
         );
+        this.tailG.fillColor = HorseVisual2D._tempTailDeep;
         this.tailG.moveTo(0, 0);
         this.tailG.bezierCurveTo(-12, 4, -24, -4, -32, -18);
         this.tailG.bezierCurveTo(-22, -16, -10, -8, 0, -5);
@@ -1046,12 +1292,13 @@ export class HorseVisual2D extends Component {
         this.tailG.fill();
 
         // 3. 尾梢飘拂毛尖轻描高光 (Silky Hair Tip Highlights)
-        this.tailG.strokeColor = new Color(
+        HorseVisual2D._tempTailHigh.set(
             Math.min(255, coat.r + 45),
             Math.min(255, coat.g + 45),
             Math.min(255, coat.b + 40),
             120
         );
+        this.tailG.strokeColor = HorseVisual2D._tempTailHigh;
         this.tailG.lineWidth = 1.2;
         this.tailG.moveTo(-2, 2);
         this.tailG.bezierCurveTo(-15, 8, -28, 0, -38, -12);
@@ -1091,11 +1338,8 @@ export class HorseVisual2D extends Component {
             this.ghostHistory.pop();
         }
 
-        // 2 个残影分别取第 2 帧与第 5 帧历史位姿
-        const ghostConfigs = [
-            { histIdx: 2, offsetPx: -14, color: new Color(255, 215, 60, 115) }, // 金色残影
-            { histIdx: 5, offsetPx: -26, color: new Color(240, 75, 45, 65) },   // 赤焰残影
-        ];
+        // 2 个残影分别取第 2 帧与第 5 帧历史位姿 (基于静态常量零 GC)
+        const ghostConfigs = HorseVisual2D._ghostConfigs;
 
         for (let i = 0; i < this.ghostNodes.length; i++) {
             const gNode = this.ghostNodes[i];
@@ -1115,6 +1359,897 @@ export class HorseVisual2D extends Component {
                 gNode.active = false;
             }
         }
+    }
+
+    /** 更新并驾齐驱激烈死斗摩擦电光火花 */
+    private updateDuelSparks(dt: number): void {
+        if (!this.duelG || !this.duelG.isValid) return;
+        this.duelG.clear();
+
+        if (!this.isDueling) {
+            if (this.duelSparks.length === 0) return;
+        } else {
+            // 每秒爆发 12~16 颗激烈摩擦火花
+            const spawnCount = Math.floor(Math.random() * 3);
+            for (let s = 0; s < spawnCount; s++) {
+                const spark = this.duelSparkPool.pop() || {
+                    x: 0,
+                    y: 0,
+                    vx: 0,
+                    vy: 0,
+                    r: 0,
+                    alpha: 255,
+                    life: 0,
+                    maxLife: 1,
+                    color: new Color(255, 200, 50, 255),
+                };
+                spark.x = -8 + Math.random() * 24;
+                spark.y = -6 + Math.random() * 20;
+                spark.vx = -80 + Math.random() * 160;
+                spark.vy = 20 + Math.random() * 120;
+                spark.r = 1.2 + Math.random() * 2.0;
+                spark.life = 0;
+                spark.maxLife = 0.18 + Math.random() * 0.16;
+                const isWhite = Math.random() > 0.6;
+                spark.color.set(isWhite ? 255 : 255, isWhite ? 255 : 185, isWhite ? 240 : 45, 255);
+                this.duelSparks.push(spark);
+            }
+        }
+
+        for (let i = this.duelSparks.length - 1; i >= 0; i--) {
+            const sp = this.duelSparks[i];
+            sp.life += dt;
+            if (sp.life >= sp.maxLife) {
+                this.duelSparks.splice(i, 1);
+                if (this.duelSparkPool.length < 32) this.duelSparkPool.push(sp);
+                continue;
+            }
+            sp.x += sp.vx * dt;
+            sp.y += sp.vy * dt;
+            sp.vy -= 260 * dt; // 重力微下落
+            const fade = 1 - (sp.life / sp.maxLife);
+            sp.color.a = Math.floor(255 * fade);
+            this.duelG.fillColor = sp.color;
+            this.duelG.circle(sp.x, sp.y, sp.r * fade);
+            this.duelG.fill();
+
+            // 极速细电光闪烁划痕 (Electric Tension Line)
+            if (fade > 0.4 && Math.random() > 0.5) {
+                this.duelG.strokeColor = sp.color;
+                this.duelG.lineWidth = 1.0;
+                this.duelG.moveTo(sp.x, sp.y);
+                this.duelG.lineTo(sp.x - sp.vx * 0.04, sp.y - sp.vy * 0.04);
+                this.duelG.stroke();
+            }
+        }
+    }
+
+    /** 计算铰接骨骼的目标姿态 (Articulated Rig Kinematic Target Pose) */
+    private computeTargetRigPose(action: string, t: number): ArticulatedRigPose {
+        const pose: ArticulatedRigPose = {
+            bodyY: 0,
+            bodyRot: 0,
+            neckRot: 0,
+            headRot: 0,
+            jawOpen: 0,
+            earAngle: 0,
+            foreNearShoulder: 0,
+            foreNearKnee: 0,
+            foreFarShoulder: 0,
+            foreFarKnee: 0,
+            hindNearHip: 0,
+            hindNearHock: 0,
+            hindFarHip: 0,
+            hindFarHock: 0,
+        };
+
+        const speed = this.speedFactor;
+
+        switch (action) {
+            case "Stand": {
+                // 平稳呼吸与静止待机，偶尔转耳
+                const breath = Math.sin(t * 1.8) * 0.8;
+                pose.bodyY = breath;
+                pose.neckRot = Math.sin(t * 1.2) * 1.5;
+                pose.earAngle = Math.sin(t * 2.5) * 6;
+                pose.hindNearHip = 3;
+                pose.hindNearHock = 4;
+                break;
+            }
+            case "Walk": {
+                // 4 拍写实慢步 (四蹄依次离地推进，无滑行)
+                const wPhase = t * 5.2 * speed;
+                pose.bodyY = Math.abs(Math.sin(wPhase * 2)) * 1.5;
+                pose.bodyRot = Math.sin(wPhase) * 1.6;
+                pose.neckRot = Math.sin(wPhase * 2) * 2.5;
+                pose.earAngle = Math.sin(wPhase * 2) * 4;
+
+                const fn = Math.sin(wPhase);
+                pose.foreNearShoulder = fn * 24;
+                pose.foreNearKnee = fn < 0 ? Math.abs(fn) * 36 : 4;
+
+                const ff = Math.sin(wPhase + Math.PI);
+                pose.foreFarShoulder = ff * 24;
+                pose.foreFarKnee = ff < 0 ? Math.abs(ff) * 36 : 4;
+
+                const hn = Math.sin(wPhase - Math.PI * 0.5);
+                pose.hindNearHip = hn * 20;
+                pose.hindNearHock = hn > 0 ? hn * 30 : 5;
+
+                const hf = Math.sin(wPhase + Math.PI * 0.5);
+                pose.hindFarHip = hf * 20;
+                pose.hindFarHock = hf > 0 ? hf * 30 : 5;
+                break;
+            }
+            case "Trot": {
+                // 2 拍对角快步 (腾空期与对角同步)
+                const tPhase = t * 8.5 * speed;
+                pose.bodyY = Math.abs(Math.sin(tPhase)) * 3.6;
+                pose.bodyRot = Math.sin(tPhase) * 2.2;
+                pose.neckRot = 4 + Math.sin(tPhase) * 2.0;
+
+                const diag1 = Math.sin(tPhase);
+                const diag2 = -diag1;
+
+                pose.foreNearShoulder = diag1 * 28;
+                pose.foreNearKnee = diag1 < 0 ? Math.abs(diag1) * 44 : 6;
+                pose.hindFarHip = diag1 * 24;
+                pose.hindFarHock = diag1 > 0 ? diag1 * 38 : 6;
+
+                pose.foreFarShoulder = diag2 * 28;
+                pose.foreFarKnee = diag2 < 0 ? Math.abs(diag2) * 44 : 6;
+                pose.hindNearHip = diag2 * 24;
+                pose.hindNearHock = diag2 > 0 ? diag2 * 38 : 6;
+                break;
+            }
+            case "Canter": {
+                // 3 拍大步跑
+                const cPhase = t * 11.0 * speed;
+                pose.bodyY = Math.sin(cPhase) * 4.2;
+                pose.bodyRot = 4 + Math.sin(cPhase) * 3.0;
+                pose.neckRot = 6 + Math.sin(cPhase) * 4.0;
+                const cLead = Math.sin(cPhase);
+                pose.foreNearShoulder = 15 + cLead * 32;
+                pose.foreNearKnee = cLead < 0 ? Math.abs(cLead) * 48 : 8;
+                pose.foreFarShoulder = -5 + cLead * 28;
+                pose.foreFarKnee = cLead > 0 ? cLead * 42 : 8;
+                pose.hindNearHip = -10 + cLead * 30;
+                pose.hindNearHock = cLead < 0 ? Math.abs(cLead) * 45 : 10;
+                pose.hindFarHip = -18 + cLead * 26;
+                pose.hindFarHock = cLead > 0 ? cLead * 40 : 10;
+                break;
+            }
+            case "Graze": {
+                // 低头吃草与咀嚼
+                pose.bodyY = -5;
+                pose.bodyRot = -3;
+                pose.neckRot = -42;
+                pose.headRot = -20;
+                pose.jawOpen = Math.abs(Math.sin(t * 7.5)) * 0.75;
+                pose.earAngle = Math.sin(t * 3) * 8;
+                pose.foreNearShoulder = 12;
+                pose.foreNearKnee = 3;
+                pose.foreFarShoulder = -6;
+                pose.foreFarKnee = 4;
+                pose.hindNearHip = 4;
+                pose.hindNearHock = 6;
+                break;
+            }
+            case "Drink": {
+                pose.bodyY = -6;
+                pose.neckRot = -48;
+                pose.headRot = -24;
+                pose.jawOpen = Math.abs(Math.sin(t * 5.0)) * 0.45;
+                pose.foreNearShoulder = 16;
+                pose.foreFarShoulder = -4;
+                break;
+            }
+            case "Rear": {
+                // 起扬：双后肢深屈承重，双前肢腾空挥击
+                pose.bodyY = 16;
+                pose.bodyRot = 44;
+                pose.neckRot = 24;
+                pose.headRot = 12;
+                pose.earAngle = -10;
+                pose.hindNearHip = -28;
+                pose.hindNearHock = 46;
+                pose.hindFarHip = -24;
+                pose.hindFarHock = 48;
+                pose.foreNearShoulder = 34 + Math.sin(t * 9) * 14;
+                pose.foreNearKnee = 50 + Math.cos(t * 9) * 12;
+                pose.foreFarShoulder = 30 - Math.sin(t * 9) * 14;
+                pose.foreFarKnee = 54 - Math.cos(t * 9) * 12;
+                break;
+            }
+            case "Buck": {
+                // 尥蹶子：前体贴地，双后腿高踹腾空
+                pose.bodyY = -4;
+                pose.bodyRot = -28;
+                pose.neckRot = -18;
+                pose.headRot = -8;
+                pose.foreNearShoulder = -8;
+                pose.foreNearKnee = 6;
+                pose.foreFarShoulder = -12;
+                pose.foreFarKnee = 8;
+                const kickPhase = Math.sin(t * 11);
+                pose.hindNearHip = 46 + kickPhase * 16;
+                pose.hindNearHock = 12;
+                pose.hindFarHip = 44 + kickPhase * 14;
+                pose.hindFarHock = 14;
+                break;
+            }
+            case "Lie_Down": {
+                // 卧倒：四肢折叠贴地
+                pose.bodyY = -14;
+                pose.bodyRot = -2;
+                pose.neckRot = -8;
+                pose.headRot = -4;
+                pose.foreNearShoulder = 28;
+                pose.foreNearKnee = 78;
+                pose.foreFarShoulder = 24;
+                pose.foreFarKnee = 75;
+                pose.hindNearHip = -32;
+                pose.hindNearHock = 76;
+                pose.hindFarHip = -28;
+                pose.hindFarHock = 74;
+                break;
+            }
+            case "Roll": {
+                // 打滚：左右翻转四蹄朝天
+                const rWave = Math.sin(t * 4.5);
+                pose.bodyY = -11;
+                pose.bodyRot = rWave * 48;
+                pose.neckRot = rWave * 18;
+                pose.foreNearShoulder = 45 + rWave * 15;
+                pose.foreNearKnee = 36;
+                pose.foreFarShoulder = 40 - rWave * 15;
+                pose.foreFarKnee = 38;
+                pose.hindNearHip = 38 + rWave * 14;
+                pose.hindNearHock = 34;
+                pose.hindFarHip = 35 - rWave * 14;
+                pose.hindFarHock = 36;
+                break;
+            }
+            case "Stretch": {
+                // 伸懒腰：前身低伏反弓，前肢伸展
+                pose.bodyY = -7;
+                pose.bodyRot = -16;
+                pose.neckRot = -12;
+                pose.headRot = 8;
+                pose.foreNearShoulder = 30;
+                pose.foreNearKnee = 0;
+                pose.foreFarShoulder = 26;
+                pose.foreFarKnee = 0;
+                pose.hindNearHip = -16;
+                pose.hindNearHock = 12;
+                break;
+            }
+            case "Paw": {
+                // 单前蹄刨地刮土
+                const pWave = Math.sin(t * 8.0);
+                pose.bodyY = 0;
+                pose.neckRot = -10;
+                pose.foreNearShoulder = pWave * 26;
+                pose.foreNearKnee = pWave < 0 ? Math.abs(pWave) * 45 : 0;
+                pose.foreFarShoulder = 0;
+                pose.foreFarKnee = 0;
+                break;
+            }
+            case "Neigh": {
+                // 仰头长啸嘶鸣
+                pose.bodyY = 3;
+                pose.neckRot = 28;
+                pose.headRot = 16;
+                pose.jawOpen = 0.85;
+                pose.earAngle = -12;
+                break;
+            }
+            case "Snort_Alert": {
+                // 警觉打响鼻：头高昂、双耳直竖
+                pose.bodyY = 2;
+                pose.neckRot = 18;
+                pose.headRot = 8;
+                pose.earAngle = 18;
+                pose.jawOpen = 0.25;
+                break;
+            }
+            case "Kick": {
+                // 单后肢后踹
+                const kWave = Math.sin(t * 9.0);
+                pose.bodyRot = -10;
+                pose.hindNearHip = 42 + kWave * 16;
+                pose.hindNearHock = 8;
+                break;
+            }
+            case "Foal_Hop": {
+                // 幼驹欢快腾跃小跳
+                const hWave = Math.abs(Math.sin(t * 7.0));
+                pose.bodyY = hWave * 7.5;
+                pose.bodyRot = Math.sin(t * 7.0) * 6;
+                pose.neckRot = 12 + Math.sin(t * 7.0) * 6;
+                pose.headRot = 8;
+                pose.earAngle = 14;
+                pose.foreNearShoulder = 18 + hWave * 20;
+                pose.foreNearKnee = hWave * 32;
+                pose.foreFarShoulder = 14 + hWave * 20;
+                pose.foreFarKnee = hWave * 32;
+                pose.hindNearHip = -8 - hWave * 15;
+                pose.hindNearHock = hWave * 28;
+                pose.hindFarHip = -10 - hWave * 15;
+                pose.hindFarHock = hWave * 28;
+                break;
+            }
+            case "Foal_Nuzzle": {
+                // 幼驹探头亲昵磨蹭
+                pose.bodyY = Math.sin(t * 2.5) * 1.5;
+                pose.neckRot = 16 + Math.sin(t * 3.5) * 8;
+                pose.headRot = 14 + Math.sin(t * 3.5) * 6;
+                pose.earAngle = 16;
+                break;
+            }
+            case "Foal_Frolic": {
+                // 幼驹撒欢轻跃旋转
+                const fWave = Math.sin(t * 8.5);
+                pose.bodyY = Math.abs(fWave) * 4.5;
+                pose.bodyRot = fWave * 8;
+                pose.neckRot = 10 + Math.sin(t * 8.5) * 6;
+                pose.foreNearShoulder = fWave * 24;
+                pose.foreNearKnee = fWave < 0 ? Math.abs(fWave) * 40 : 4;
+                pose.foreFarShoulder = -fWave * 24;
+                pose.foreFarKnee = fWave > 0 ? fWave * 40 : 4;
+                pose.hindNearHip = -fWave * 20;
+                pose.hindNearHock = fWave < 0 ? Math.abs(fWave) * 35 : 6;
+                pose.hindFarHip = fWave * 20;
+                pose.hindFarHock = fWave > 0 ? fWave * 35 : 6;
+                break;
+            }
+            default: {
+                pose.bodyY = Math.sin(t * 2) * 0.6;
+                break;
+            }
+        }
+
+        return pose;
+    }
+
+    /** 平滑插值更新骨骼当前姿态 (CrossFade 融合过渡，杜绝硬切) */
+    private updateRigPose(dt: number): void {
+        this.targetRigPose = this.computeTargetRigPose(this.currentAction, this.animTime);
+        const blend = 1 - Math.exp(-14.0 * Math.max(0.001, Math.min(dt, 0.05)));
+        const cur = this.currentRigPose;
+        const tgt = this.targetRigPose;
+
+        cur.bodyY += (tgt.bodyY - cur.bodyY) * blend;
+        cur.bodyRot += (tgt.bodyRot - cur.bodyRot) * blend;
+        cur.neckRot += (tgt.neckRot - cur.neckRot) * blend;
+        cur.headRot += (tgt.headRot - cur.headRot) * blend;
+        cur.jawOpen += (tgt.jawOpen - cur.jawOpen) * blend;
+        cur.earAngle += (tgt.earAngle - cur.earAngle) * blend;
+        cur.foreNearShoulder += (tgt.foreNearShoulder - cur.foreNearShoulder) * blend;
+        cur.foreNearKnee += (tgt.foreNearKnee - cur.foreNearKnee) * blend;
+        cur.foreFarShoulder += (tgt.foreFarShoulder - cur.foreFarShoulder) * blend;
+        cur.foreFarKnee += (tgt.foreFarKnee - cur.foreFarKnee) * blend;
+        cur.hindNearHip += (tgt.hindNearHip - cur.hindNearHip) * blend;
+        cur.hindNearHock += (tgt.hindNearHock - cur.hindNearHock) * blend;
+        cur.hindFarHip += (tgt.hindFarHip - cur.hindFarHip) * blend;
+        cur.hindFarHock += (tgt.hindFarHock - cur.hindFarHock) * blend;
+    }
+
+    /**
+     * 绘制模块化高精解剖铰接骨骼系统 (George Stubbs 纯血马古典解剖学规范)
+     * 涵盖肌肉流线、高光缎面光泽、背脊与腹部立体阴影、额头流星白章、四蹄白袜踏雪、
+     * 柔体多缕马鬃、多层物理马尾、晶莹灵动眼眸、转动双耳与开合下颌。
+     */
+    private renderArticulatedRig(pose: ArticulatedRigPose): void {
+        const g = this.rigG;
+        if (!g || !g.isValid) return;
+        g.clear();
+
+        const coat = this.getCoatBaseColor();
+        const farCoat = new Color(
+            Math.max(10, Math.floor(coat.r * 0.72)),
+            Math.max(10, Math.floor(coat.g * 0.72)),
+            Math.max(10, Math.floor(coat.b * 0.72)),
+            255
+        );
+        const shadowCoat = new Color(
+            Math.max(10, Math.floor(coat.r * 0.82)),
+            Math.max(10, Math.floor(coat.g * 0.82)),
+            Math.max(10, Math.floor(coat.b * 0.82)),
+            255
+        );
+        const silkHighlight = new Color(
+            Math.min(255, coat.r + 55),
+            Math.min(255, coat.g + 55),
+            Math.min(255, coat.b + 50),
+            140
+        );
+        const hoofCol = new Color(32, 26, 22, 255);
+        const maneCol = this.getManeColor();
+        const maneHighlight = new Color(
+            Math.min(255, maneCol.r + 45),
+            Math.min(255, maneCol.g + 45),
+            Math.min(255, maneCol.b + 40),
+            200
+        );
+
+        let legLen = 14.5;
+        let bodyW = 20;
+        let bodyH = 13;
+        let headScale = 1.0;
+        let croupOffset = 0;
+        let hasTack = false;
+
+        if (this.isFoal) {
+            if (this.foalStage === FoalGrowthStage.Foal) {
+                legLen = 13.5;
+                bodyW = 15;
+                bodyH = 10;
+                headScale = 1.25;
+            } else if (this.foalStage === FoalGrowthStage.Yearling) {
+                legLen = 14.2;
+                bodyW = 18;
+                bodyH = 11.5;
+                headScale = 1.10;
+                croupOffset = 3.5;
+            } else if (this.foalStage === FoalGrowthStage.Adult) {
+                legLen = 14.5;
+                bodyW = 20;
+                bodyH = 13;
+                headScale = 1.0;
+            } else if (this.foalStage === FoalGrowthStage.RacingPro) {
+                legLen = 15.0;
+                bodyW = 20.5;
+                bodyH = 12.5;
+                headScale = 0.98;
+                hasTack = true;
+            }
+        } else {
+            hasTack = !this.isPaddockMode;
+        }
+
+        const bY = pose.bodyY;
+        const bRotRad = (pose.bodyRot * Math.PI) / 180;
+
+        // 1. 远景肢体 (Far Legs: Z-Order 最底层)
+        const farShoulderX = 14 * Math.cos(bRotRad);
+        const farShoulderY = bY + 14 * Math.sin(bRotRad) - 2;
+        this.drawArticulatedLeg(
+            g,
+            farShoulderX,
+            farShoulderY,
+            pose.foreFarShoulder,
+            pose.foreFarKnee,
+            legLen,
+            farCoat,
+            hoofCol,
+            false
+        );
+
+        const farHipX = -16 * Math.cos(bRotRad);
+        const farHipY = bY + croupOffset - 16 * Math.sin(bRotRad);
+        this.drawArticulatedLeg(
+            g,
+            farHipX,
+            farHipY,
+            pose.hindFarHip,
+            pose.hindFarHock,
+            legLen * 1.05,
+            farCoat,
+            hoofCol,
+            true
+        );
+
+        // 2. 马体主躯干 (Torso / Barrel, Withers, Loin & Croup)
+        g.fillColor = coat;
+        // 臀肌后躯大椭圆 (Croup & Buttock)
+        g.ellipse(-14 * Math.cos(bRotRad), bY + croupOffset, bodyW * 0.68, bodyH * 1.05);
+        g.fill();
+
+        // 前躯深胸廓大椭圆 (Thorax & Chest)
+        g.ellipse(8 * Math.cos(bRotRad), bY + 3, bodyW * 0.78, bodyH * 1.10);
+        g.fill();
+
+        // 中躯腰背与腹腔连体多边形 (Loin & Abdomen)
+        g.moveTo(-14 * Math.cos(bRotRad), bY + croupOffset + bodyH * 0.72);
+        g.quadraticCurveTo(-2 * Math.cos(bRotRad), bY + 2 + bodyH * 0.68, 8 * Math.cos(bRotRad), bY + 3 + bodyH * 0.78);
+        g.lineTo(8 * Math.cos(bRotRad), bY + 3 - bodyH * 0.78);
+        g.quadraticCurveTo(-2 * Math.cos(bRotRad), bY + 1 - bodyH * 0.65, -14 * Math.cos(bRotRad), bY + croupOffset - bodyH * 0.65);
+        g.close();
+        g.fill();
+
+        // 躯干受光缎面丝绸高光 (Silk Sheen Highlights on Withers & Loin)
+        g.strokeColor = silkHighlight;
+        g.lineWidth = 2.4;
+        g.moveTo(-16 * Math.cos(bRotRad), bY + croupOffset + bodyH * 0.66);
+        g.quadraticCurveTo(-4 * Math.cos(bRotRad), bY + 2 + bodyH * 0.60, 10 * Math.cos(bRotRad), bY + 3 + bodyH * 0.74);
+        g.stroke();
+
+        // 腹底与腹肋立体暗部阴影 (Underbelly Ambient Shadow)
+        g.strokeColor = shadowCoat;
+        g.lineWidth = 2.8;
+        g.moveTo(-12 * Math.cos(bRotRad), bY + croupOffset - bodyH * 0.58);
+        g.quadraticCurveTo(-2 * Math.cos(bRotRad), bY + 1 - bodyH * 0.68, 8 * Math.cos(bRotRad), bY + 3 - bodyH * 0.72);
+        g.stroke();
+
+        // 肩胛骨肌峰突起高光 (Scapular Ridge)
+        g.strokeColor = silkHighlight;
+        g.lineWidth = 1.6;
+        g.moveTo(6 * Math.cos(bRotRad), bY + 9);
+        g.lineTo(12 * Math.cos(bRotRad), bY + 2);
+        g.stroke();
+
+        // 3. 近景肢体 (Near Legs: Z-Order 前景)
+        const nearHipX = -14 * Math.cos(bRotRad);
+        const nearHipY = bY + croupOffset - 14 * Math.sin(bRotRad);
+        this.drawArticulatedLeg(
+            g,
+            nearHipX,
+            nearHipY,
+            pose.hindNearHip,
+            pose.hindNearHock,
+            legLen * 1.05,
+            coat,
+            hoofCol,
+            true
+        );
+
+        const nearShoulderX = 12 * Math.cos(bRotRad);
+        const nearShoulderY = bY + 12 * Math.sin(bRotRad);
+        this.drawArticulatedLeg(
+            g,
+            nearShoulderX,
+            nearShoulderY,
+            pose.foreNearShoulder,
+            pose.foreNearKnee,
+            legLen,
+            coat,
+            hoofCol,
+            false
+        );
+
+        // 4. 颈项、马头与面部特征 (Neck, Head, Muzzle & Facial Markings)
+        const neckBaseX = 14 * Math.cos(bRotRad);
+        const neckBaseY = bY + 8 + 14 * Math.sin(bRotRad);
+        const neckAngleRad = ((pose.bodyRot + pose.neckRot + 52) * Math.PI) / 180;
+        const neckLen = (this.isFoal ? 16 : 22) * headScale;
+
+        const headPollX = neckBaseX + Math.cos(neckAngleRad) * neckLen;
+        const headPollY = neckBaseY + Math.sin(neckAngleRad) * neckLen;
+
+        // 优雅弓形马颈肌肉多边形 (Arched Crested Neck)
+        g.fillColor = coat;
+        g.moveTo(neckBaseX - 3, neckBaseY);
+        // 上缘弓形凸弧 (Convex Crest)
+        g.quadraticCurveTo(neckBaseX + 6, neckBaseY + neckLen * 0.65, headPollX - 2, headPollY);
+        g.lineTo(headPollX + 4, headPollY - 3);
+        // 下缘咽喉凹弧 (Throatlatch Concave Curve)
+        g.quadraticCurveTo(neckBaseX + 8, neckBaseY + neckLen * 0.35, neckBaseX + 6, neckBaseY - 6);
+        g.close();
+        g.fill();
+
+        // 颈背肌肉高光
+        g.strokeColor = silkHighlight;
+        g.lineWidth = 1.8;
+        g.moveTo(neckBaseX - 2, neckBaseY + 1);
+        g.quadraticCurveTo(neckBaseX + 6, neckBaseY + neckLen * 0.62, headPollX - 2, headPollY - 1);
+        g.stroke();
+
+        // 飘逸多缕马鬃 (Multi-Strand Mane Locks)
+        const maneLocks = 6;
+        for (let m = 0; m < maneLocks; m++) {
+            const mFrac = m / (maneLocks - 1);
+            const mx = neckBaseX - 2 + (headPollX - neckBaseX) * mFrac;
+            const my = neckBaseY + 2 + (headPollY - neckBaseY) * mFrac;
+            const wave = Math.sin(this.animTime * 12 + m * 0.9) * 2.4;
+
+            g.strokeColor = maneCol;
+            g.lineWidth = 2.2;
+            g.moveTo(mx, my);
+            g.quadraticCurveTo(mx - 4 + wave * 0.5, my + 4, mx - 8 + wave, my + 6 + wave * 0.5);
+            g.stroke();
+
+            // 亮缕丝光
+            g.strokeColor = maneHighlight;
+            g.lineWidth = 1.0;
+            g.moveTo(mx, my + 0.8);
+            g.quadraticCurveTo(mx - 3 + wave * 0.5, my + 4.5, mx - 7 + wave, my + 6.8 + wave * 0.5);
+            g.stroke();
+        }
+
+        // 马头轮廓与下颌肌群 (Head, Masseter Cheek & Muzzle)
+        const headAngleRad = ((pose.bodyRot + pose.neckRot + pose.headRot) * Math.PI) / 180;
+        const muzzleLen = (this.isFoal ? 13 : 17) * headScale;
+        const muzzleX = headPollX + Math.cos(headAngleRad) * muzzleLen;
+        const muzzleY = headPollY - Math.sin(headAngleRad) * 4 - (pose.neckRot < -25 ? 5 : 2);
+
+        // 圆润强健的咬肌颊颊骨 (Masseter Cheek Circle)
+        g.fillColor = coat;
+        g.circle(headPollX, headPollY, 5.4 * headScale);
+        g.fill();
+
+        // 额部至吻端侧面楔形多边形 (Forehead to Muzzle Wedge)
+        g.moveTo(headPollX - 1, headPollY + 4.2 * headScale);
+        g.lineTo(muzzleX, muzzleY + 2.5 * headScale);
+        g.lineTo(muzzleX - 1, muzzleY - 3.5 * headScale);
+        g.lineTo(headPollX + 1, headPollY - 4.2 * headScale);
+        g.close();
+        g.fill();
+
+        // 额头流星白章标志 (Forehead Diamond Star / Blaze)
+        if (this.horseNo % 2 === 1 || this.horseNo === 4) {
+            const starX = headPollX + 2.5 * headScale;
+            const starY = headPollY + 2.0 * headScale;
+            g.fillColor = new Color(252, 252, 248, 245);
+            g.moveTo(starX, starY + 2.2 * headScale);
+            g.lineTo(starX + 1.8 * headScale, starY);
+            g.lineTo(starX, starY - 2.2 * headScale);
+            g.lineTo(starX - 1.8 * headScale, starY);
+            g.close();
+            g.fill();
+        }
+
+        // 柔软吻端鼻唇与鼻孔 (Velvety Muzzle & Nostrils)
+        g.fillColor = new Color(38, 26, 20, 245);
+        g.circle(muzzleX - 0.8, muzzleY + 0.6 * headScale, 1.4 * headScale);
+        g.fill();
+        // 鼻孔微红内壁
+        g.fillColor = new Color(85, 42, 35, 230);
+        g.circle(muzzleX - 0.8, muzzleY + 0.6 * headScale, 0.7 * headScale);
+        g.fill();
+
+        // 晶莹灵动纯血马明眸 (Expressive Equine Eye)
+        const eyeX = headPollX + 3.2 * headScale;
+        const eyeY = headPollY + 1.2 * headScale;
+        // 眼窝深色暗影
+        g.fillColor = new Color(22, 16, 12, 255);
+        g.ellipse(eyeX, eyeY, 2.2 * headScale, 1.4 * headScale);
+        g.fill();
+        // 琥珀/深褐虹膜
+        g.fillColor = new Color(68, 42, 22, 255);
+        g.circle(eyeX + 0.2, eyeY, 1.0 * headScale);
+        g.fill();
+        // 黑色瞳孔
+        g.fillColor = Color.BLACK;
+        g.circle(eyeX + 0.2, eyeY, 0.6 * headScale);
+        g.fill();
+        // 灵动光捕高光点 (Catchlight Dot)
+        g.fillColor = Color.WHITE;
+        g.circle(eyeX + 0.6, eyeY + 0.5, 0.45);
+        g.fill();
+        // 上眼睑轮廓线
+        g.strokeColor = new Color(18, 12, 8, 240);
+        g.lineWidth = 0.8;
+        g.arc(eyeX, eyeY + 0.2, 2.0 * headScale, 0.2, Math.PI - 0.2, false);
+        g.stroke();
+
+        // 灵动双耳 (Mobile Ears)
+        const earAngleRad = ((pose.bodyRot + pose.neckRot + pose.earAngle + 85) * Math.PI) / 180;
+        const earLen = 7.8 * headScale;
+        const earTipX = headPollX + Math.cos(earAngleRad) * earLen;
+        const earTipY = headPollY + Math.sin(earAngleRad) * earLen;
+
+        // 远侧耳 (Far Ear)
+        g.fillColor = farCoat;
+        g.moveTo(headPollX - 3.5, headPollY + 3.5);
+        g.lineTo(earTipX - 2.5, earTipY - 1);
+        g.lineTo(headPollX, headPollY + 4);
+        g.close();
+        g.fill();
+
+        // 近侧耳 (Near Ear)
+        g.fillColor = coat;
+        g.moveTo(headPollX - 2, headPollY + 4.2);
+        g.lineTo(earTipX, earTipY);
+        g.lineTo(headPollX + 2.5, headPollY + 3.2);
+        g.close();
+        g.fill();
+        // 内耳肉粉色软毛贴片 (Inner Ear Pinkish Fluff)
+        g.strokeColor = new Color(225, 180, 170, 200);
+        g.lineWidth = 1.0;
+        g.moveTo(headPollX - 0.5, headPollY + 4.5);
+        g.lineTo(earTipX * 0.85 + headPollX * 0.15, earTipY * 0.85 + headPollY * 0.15);
+        g.stroke();
+
+        // 额前额毛 (Forelock Falling Over Forehead)
+        g.strokeColor = maneCol;
+        g.lineWidth = 1.8;
+        g.moveTo(headPollX, headPollY + 4.5);
+        g.quadraticCurveTo(headPollX + 2.5, headPollY + 3.5, headPollX + 3.8, headPollY + 1.0);
+        g.stroke();
+
+        // 张嘴与下颌骨开合 (Articulated Jaw Movement)
+        if (pose.jawOpen > 0.05) {
+            const jawDrop = pose.jawOpen * 4.5 * headScale;
+            g.fillColor = coat;
+            g.moveTo(headPollX + 2, headPollY - 3);
+            g.lineTo(muzzleX - 2, muzzleY - 3 - jawDrop);
+            g.lineTo(muzzleX + 1, muzzleY - jawDrop);
+            g.close();
+            g.fill();
+
+            // 口腔内粉红色舌齿
+            g.fillColor = new Color(195, 75, 75, 220);
+            g.rect(muzzleX - 1.5, muzzleY - 2.2 - jawDrop, 2.5, jawDrop * 0.6);
+            g.fill();
+        }
+
+        // 5. 竞技马具装备 (Saddlecloth, Bridle when in Racing Pro or Race)
+        if (hasTack) {
+            this.renderRigRacingTack(g, bRotRad, bY, croupOffset, headPollX, headPollY, muzzleX, muzzleY, headScale);
+        }
+    }
+
+    /** 绘制附着在解剖骨骼上的高精竞技鞍布、水勒缰绳与马具细节 */
+    private renderRigRacingTack(
+        g: Graphics,
+        bRotRad: number,
+        bY: number,
+        _croupOffset: number,
+        headPollX: number,
+        headPollY: number,
+        muzzleX: number,
+        muzzleY: number,
+        headScale: number
+    ): void {
+        const silkCol = this.getJockeySilkColor();
+
+        // A. 水勒皮质头绪缰绳 (Leather Bridle, Snaffle Bit & Reins)
+        g.strokeColor = new Color(48, 30, 18, 240);
+        g.lineWidth = 1.2;
+        // 额颊带
+        g.moveTo(headPollX, headPollY + 3 * headScale);
+        g.lineTo(muzzleX - 2, muzzleY + 0.5 * headScale);
+        g.stroke();
+        // 鼻革带
+        g.moveTo(muzzleX - 3, muzzleY + 2 * headScale);
+        g.lineTo(muzzleX - 1, muzzleY - 2.5 * headScale);
+        g.stroke();
+        // 金属马衔铁圈 (Snaffle Bit Ring)
+        g.strokeColor = new Color(225, 205, 120, 240);
+        g.lineWidth = 1.0;
+        g.circle(muzzleX - 1.5, muzzleY - 0.5 * headScale, 1.5 * headScale);
+        g.stroke();
+
+        // B. 竞技官方鞍布 (Racing Saddle Pad)
+        const saddleX = -4 * Math.cos(bRotRad);
+        const saddleY = bY + 5;
+        g.fillColor = silkCol;
+        g.roundRect(saddleX - 11, saddleY - 6, 22, 13, 3);
+        g.fill();
+
+        // 鞍布烫金滚边绳 (Gold Cord Trim)
+        g.strokeColor = new Color(245, 215, 65, 240);
+        g.lineWidth = 1.2;
+        g.roundRect(saddleX - 11, saddleY - 6, 22, 13, 3);
+        g.stroke();
+
+        // 鞍布中央白色圆圈与马号
+        g.fillColor = Color.WHITE;
+        g.circle(saddleX, saddleY, 4.5);
+        g.fill();
+        g.fillColor = WestColors.INK_DARK;
+        g.circle(saddleX, saddleY, 1.8);
+        g.fill();
+
+        // 黑色轻量竞技马鞍 (Aero Racing Saddle)
+        g.fillColor = new Color(28, 20, 15, 245);
+        g.roundRect(saddleX - 6, saddleY + 1, 12, 6, 2);
+        g.fill();
+
+        // 鞍腹肚带 (Girth Strap)
+        g.fillColor = new Color(42, 28, 16, 240);
+        g.rect(saddleX - 2, saddleY - 12, 3.5, 7);
+        g.fill();
+
+        // 金属马镫 (Brass Stirrup)
+        g.strokeColor = new Color(225, 205, 120, 240);
+        g.lineWidth = 1.0;
+        g.rect(saddleX - 2.5, saddleY - 8, 4.5, 3.5);
+        g.stroke();
+    }
+
+    /** 绘制带前膝/飞节与球节解剖铰接的写实四肢 (含肌肉轮廓、关节曲度、白袜白章与金属马蹄铁) */
+    private drawArticulatedLeg(
+        g: Graphics,
+        rootX: number,
+        rootY: number,
+        angle1Deg: number,
+        angle2Deg: number,
+        length: number,
+        legColor: Color,
+        hoofColor: Color,
+        isHind: boolean
+    ): void {
+        const rad1 = ((angle1Deg - 90) * Math.PI) / 180;
+        const upperLen = length * 0.52;
+        const lowerLen = length * 0.48;
+
+        const jointX = rootX + Math.cos(rad1) * upperLen;
+        const jointY = rootY + Math.sin(rad1) * upperLen;
+
+        const rad2 = isHind ? rad1 - (angle2Deg * Math.PI) / 180 : rad1 + (angle2Deg * Math.PI) / 180;
+        const hoofX = jointX + Math.cos(rad2) * lowerLen;
+        const hoofY = jointY + Math.sin(rad2) * lowerLen;
+
+        // 1. 上肢肌肉轮廓 (Upper Muscular Segment)
+        if (isHind) {
+            // 后大腿丰满股骨肌群 (Hind Thigh Muscle Contour)
+            g.strokeColor = legColor;
+            g.lineWidth = 6.2;
+            g.moveTo(rootX, rootY);
+            g.lineTo(jointX, jointY);
+            g.stroke();
+
+            // 大腿后侧弧形肌肉阴影
+            g.strokeColor = new Color(Math.max(10, legColor.r - 28), Math.max(10, legColor.g - 28), Math.max(10, legColor.b - 28), 160);
+            g.lineWidth = 2.4;
+            g.moveTo(rootX - 2.5, rootY - 1);
+            g.lineTo(jointX - 1.5, jointY);
+            g.stroke();
+        } else {
+            // 前臂肌肉 (Forearm Scapula & Radius)
+            g.strokeColor = legColor;
+            g.lineWidth = 4.6;
+            g.moveTo(rootX, rootY);
+            g.lineTo(jointX, jointY);
+            g.stroke();
+        }
+
+        // 2. 关节铰接点 (Carpus Flat Knee / Hock Calcaneus)
+        g.fillColor = legColor;
+        g.circle(jointX, jointY, isHind ? 3.4 : 2.8);
+        g.fill();
+
+        // 飞节/前膝后方筋腱转折棱角
+        if (isHind) {
+            const hockBackX = jointX - Math.sin(rad1) * 2.2;
+            const hockBackY = jointY + Math.cos(rad1) * 2.2;
+            g.circle(hockBackX, hockBackY, 2.0);
+            g.fill();
+        }
+
+        // 3. 下肢管骨与球节系部 (Cannon Bone & Pastern)
+        g.strokeColor = legColor;
+        g.lineWidth = isHind ? 3.5 : 3.0;
+        g.moveTo(jointX, jointY);
+        g.lineTo(hoofX, hoofY);
+        g.stroke();
+
+        // 4. 四蹄白袜标志 (White Sock Marking / 蹄踏雪)
+        const hasWhiteSock = (this.horseNo % 3 === 0) || (this.horseNo === 1 && isHind) || (this.horseNo === 5);
+        if (hasWhiteSock) {
+            const sockStartX = jointX + (hoofX - jointX) * 0.58;
+            const sockStartY = jointY + (hoofY - jointY) * 0.58;
+            g.strokeColor = new Color(250, 250, 246, 240);
+            g.lineWidth = isHind ? 3.4 : 2.9;
+            g.moveTo(sockStartX, sockStartY);
+            g.lineTo(hoofX, hoofY);
+            g.stroke();
+
+            // 蹄冠部淡粉色皮肤环 (Coronary Band)
+            g.strokeColor = new Color(245, 205, 195, 200);
+            g.lineWidth = 1.0;
+            g.moveTo(hoofX - 1.2, hoofY);
+            g.lineTo(hoofX + 1.2, hoofY);
+            g.stroke();
+        }
+
+        // 5. 写实梯形坚硬角质马蹄与银色马蹄铁 (Anatomical Hoof & Horseshoe)
+        g.fillColor = hoofColor;
+        g.moveTo(hoofX - 2.8, hoofY + 1.4);
+        g.lineTo(hoofX + 2.8, hoofY + 1.4);
+        g.lineTo(hoofX + 3.2, hoofY - 2.2);
+        g.lineTo(hoofX - 2.2, hoofY - 2.2);
+        g.close();
+        g.fill();
+
+        // 蹄底金属马蹄铁银色反光 (Horseshoe Iron Trim)
+        g.strokeColor = new Color(205, 215, 225, 220);
+        g.lineWidth = 0.9;
+        g.moveTo(hoofX - 2.4, hoofY - 2.2);
+        g.lineTo(hoofX + 3.4, hoofY - 2.2);
+        g.stroke();
     }
 
     /**
@@ -1283,9 +2418,12 @@ export class HorseVisual2D extends Component {
                 posY = Math.abs(Math.sin(t * 13.0)) * 1.5;
                 break;
             }
-            case "Snort": {
-                posX = Math.sin(t * 12.0) * 2.5;
-                rotDeg = Math.sin(t * 12.0) * 2.0;
+            case "Snort":
+            case "Snort_Alert": {
+                posY = 1.5 + Math.sin(t * 14.0) * 1.5;
+                posX = Math.sin(t * 14.0) * 2.2;
+                rotDeg = 4.5 + Math.sin(t * 14.0) * 2.5;
+                scaleX = 1.02;
                 break;
             }
             case "Urinate_Def": {

@@ -30,9 +30,9 @@ export interface TypographyOptions {
 }
 
 export class WestTypography {
-    /** 西部专属字体族优先列表 (禁用 Arial, Roboto) */
+    /** 西部专属超清晰字体族优先列表：优先加载 Western 衬线，中文全面匹配 Microsoft YaHei 与 PingFang SC 高清矢量字形 */
     public static readonly FONT_FAMILY =
-        "'Playfair Display', 'Source Han Sans CN', '思源黑体', 'Noto Serif SC', 'Georgia', serif";
+        "'Playfair Display', 'Noto Serif SC', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', '微软雅黑', 'Source Han Sans CN', 'Noto Sans SC', sans-serif";
 
     /**
      * 四级字体阶梯基准配置
@@ -85,12 +85,15 @@ export class WestTypography {
         options?: TypographyOptions,
     ): void {
         const spec = this.SPEC[level];
-        const fontSize = options?.size ?? spec.defaultSize;
+        const rawSize = options?.size ?? spec.defaultSize;
+        // 中文字体笔画防粘连清晰度保障底线：不低于 13.5px
+        const fontSize = Math.max(13.5, rawSize);
 
         label.fontFamily = this.FONT_FAMILY;
         label.fontSize = fontSize;
-        // 关键规则：lineHeight = fontSize + 6px
+        // 关键规则：lineHeight = fontSize + 6px (杜绝松垮)
         label.lineHeight = fontSize + 6;
+        label.spacingX = 0.3;
         label.isBold = options?.isBold ?? spec.bold;
         label.isItalic = options?.isItalic ?? false;
         label.color = options?.color ?? spec.defaultColor;

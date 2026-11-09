@@ -1,0 +1,93 @@
+{
+  "ver": "2.3.14",
+  "importer": "gltf",
+  "imported": true,
+  "uuid": "0b756f53-919d-498a-9ed0-0c4b82d95bc9",
+  "files": [],
+  "subMetas": {
+    "489b9": {
+      "importer": "gltf-mesh",
+      "uuid": "0b756f53-919d-498a-9ed0-0c4b82d95bc9@489b9",
+      "displayName": "",
+      "id": "489b9",
+      "name": "Horse_09_Mesh.mesh",
+      "userData": {
+        "gltfIndex": 0,
+        "triangleCount": 276
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "dcaa5": {
+      "importer": "gltf-material",
+      "uuid": "0b756f53-919d-498a-9ed0-0c4b82d95bc9@dcaa5",
+      "displayName": "",
+      "id": "dcaa5",
+      "name": "Horse_09_Material.material",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "ef7bb": {
+      "importer": "gltf-scene",
+      "uuid": "0b756f53-919d-498a-9ed0-0c4b82d95bc9@ef7bb",
+      "displayName": "",
+      "id": "ef7bb",
+      "name": "Horse_09.prefab",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "imageMetas": [],
+    "lods": {
+      "enable": false,
+      "hasBuiltinLOD": false,
+      "options": [
+        {
+          "screenRatio": 0.25,
+          "faceCount": 1
+        },
+        {
+          "screenRatio": 0.125,
+          "faceCount": 0.25
+        },
+        {
+          "screenRatio": 0.01,
+          "faceCount": 0.1
+        }
+      ]
+    },
+    "assetFinder": {
+      "meshes": [
+        "0b756f53-919d-498a-9ed0-0c4b82d95bc9@489b9"
+      ],
+      "skeletons": [],
+      "textures": [],
+      "materials": [
+        "0b756f53-919d-498a-9ed0-0c4b82d95bc9@dcaa5"
+      ],
+      "scenes": [
+        "0b756f53-919d-498a-9ed0-0c4b82d95bc9@ef7bb"
+      ]
+    }
+  }
+}

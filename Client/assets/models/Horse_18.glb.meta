@@ -1,0 +1,93 @@
+{
+  "ver": "2.3.14",
+  "importer": "gltf",
+  "imported": true,
+  "uuid": "a0b574ae-a08e-4585-af0d-1109ddb8ee23",
+  "files": [],
+  "subMetas": {
+    "72897": {
+      "importer": "gltf-material",
+      "uuid": "a0b574ae-a08e-4585-af0d-1109ddb8ee23@72897",
+      "displayName": "",
+      "id": "72897",
+      "name": "Horse_18_Material.material",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "5b62d": {
+      "importer": "gltf-mesh",
+      "uuid": "a0b574ae-a08e-4585-af0d-1109ddb8ee23@5b62d",
+      "displayName": "",
+      "id": "5b62d",
+      "name": "Horse_18_Mesh.mesh",
+      "userData": {
+        "gltfIndex": 0,
+        "triangleCount": 276
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "94f11": {
+      "importer": "gltf-scene",
+      "uuid": "a0b574ae-a08e-4585-af0d-1109ddb8ee23@94f11",
+      "displayName": "",
+      "id": "94f11",
+      "name": "Horse_18.prefab",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "imageMetas": [],
+    "lods": {
+      "enable": false,
+      "hasBuiltinLOD": false,
+      "options": [
+        {
+          "screenRatio": 0.25,
+          "faceCount": 1
+        },
+        {
+          "screenRatio": 0.125,
+          "faceCount": 0.25
+        },
+        {
+          "screenRatio": 0.01,
+          "faceCount": 0.1
+        }
+      ]
+    },
+    "assetFinder": {
+      "meshes": [
+        "a0b574ae-a08e-4585-af0d-1109ddb8ee23@5b62d"
+      ],
+      "skeletons": [],
+      "textures": [],
+      "materials": [
+        "a0b574ae-a08e-4585-af0d-1109ddb8ee23@72897"
+      ],
+      "scenes": [
+        "a0b574ae-a08e-4585-af0d-1109ddb8ee23@94f11"
+      ]
+    }
+  }
+}
